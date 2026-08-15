@@ -1,0 +1,48 @@
+{
+  "name": "dsh-tunnel-loopback",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness Web plugin for tunnel/proxy deployments: forces the client connection to classify as loopback so settings persistence (theme, language, welcome notice, settings document) works when the browser URL is not loopback.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "tunnel",
+    "reverse-proxy",
+    "loopback",
+    "settings-persistence",
+    "cloudflared"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/index.d.ts",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "watch": "tsdown --watch",
+    "prepare": "tsdown"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  },
+  "license": "MIT"
+}

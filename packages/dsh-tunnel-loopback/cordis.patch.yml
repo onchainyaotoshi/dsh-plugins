@@ -1,0 +1,13 @@
+# Layer bundle dsh-tunnel-loopback.
+#
+# WAJIB (critical): bundle ini harus terdaftar SEBELUM @deepseek-ai/dsh-web-app
+# di `dsh.profile.bundles` (package.json profil). Urutan baris komposisi adalah
+# urutan registrasi plugin di browser, dan fix ini hanya berlaku kalau client
+# half diaktifkan lebih dulu dari baris-baris yang membaca
+# `connection.isLoopback` (connection, ui-settings, ui-settings-general,
+# ui-settings-models, ui-deliverables). `dsh plugin add` menaruh bundle baru di
+# AKHIR daftar — pindahkan manual kalau perlu. Host half memperingatkan di log
+# kalau urutannya salah.
+- insert:
+    - id: tunnel-loopback
+      name: dsh-tunnel-loopback

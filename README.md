@@ -8,6 +8,7 @@ Satu repo, banyak paket npm (opsi B — lihat [ADR topologi](docs/decisions/2026
 | Paket | Deskripsi |
 |---|---|
 | `dsh-file-explorer` | Panel tree file + viewer source code workspace aktif di Web UI |
+| `dsh-tunnel-loopback` | Deployment tunnel/proxy: paksa `connection.isLoopback` di client supaya persistensi settings (tema/bahasa/welcome notice) hidup saat URL browser bukan loopback — WAJIB terdaftar sebelum `@deepseek-ai/dsh-web-app` di `dsh.profile.bundles` |
 
 ## Cara develop
 
@@ -25,6 +26,11 @@ dsh plugin --profile web add ./packages/file-explorer
 dsh --profile web --dump-config | grep file-explorer   # layer harus muncul
 sudo systemctl restart dsh                            # SEKALI, di jeda antar turn!
 ```
+
+Catatan `dsh-tunnel-loopback`: setelah `dsh plugin add`, **pindahkan manual**
+entrinya di `dsh.profile.bundles` ke posisi SEBELUM `@deepseek-ai/dsh-web-app`
+(`dsh plugin add` menaruh bundle baru di akhir daftar). Kalau urutannya salah,
+host half plugin memperingatkan di log dan fix tidak aktif.
 
 Verifikasi HTTP:
 
