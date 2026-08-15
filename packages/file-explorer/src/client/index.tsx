@@ -1,40 +1,40 @@
 /**
  * dsh-file-explorer — browser half.
  * Dua entry slot:
- *   sidebar.footer.action → tombol toggle di kaki sidebar
- *   shell.overlay          → drawer kanan: workspace selector + tree + viewer
+ *   sidebar.footer.action → tombol buka panel di kaki sidebar
+ *   details              → KOLOM KANAN LAYOUT beneran (bukan overlay):
+ *                          panel file memakan layout, chat terdorong, lebar
+ *                          bisa di-drag (clamp 300–520px, default 360px),
+ *                          dibuka/ditutup lewat ctx.layout.openDetails()/
+ *                          closeDetails(). Seat ini menggantikan (shadow)
+ *                          panel "tool details" bawaan — keputusan pemilik.
  *
  * Data lewat route HTTP host half (same-origin fetch), BUKAN RPC /api —
  * jadi plugin ini mandiri dari allowlist apiproxy. Keamanan di sisi host
  * (containment workspace).
  *
+ * Styling: WAJIB token --dsw-* (theme-aware light/dark) + pola shell
+ * (row radius 8px, icon-button 28px bulat, hover
+ * --dsw-alias-interactive-bg-hover, header panel = pola DetailsPanel
+ * bawaan). Hover/focus tidak bisa dinyatakan di inline style → satu
+ * <style> scoped di-inject lewat ctx.effect (dibuang saat plugin unload).
+ *
+ * Workspace aktif: ctx.sessions.list (SnapshotStore, bentuk SessionListState)
+ * → list.current + byId[id].cwd (path canonical) → dicocokkan ke
+ * workspace.path di sisi client. Tanpa endpoint host baru; override manual
+ * bertahan sampai sesi aktif berganti.
+ *
  * TODO(verify): bentuk persis ComposedProps slot (PropsRuntime dll) dicek
  * ulang saat runtime 0.1.0-rc.6 — sementara props komponen diketik longgar.
  */
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
+import type { ISessions, SessionListState } from '@deepseek-ai/dsh-client-runtime/client'
 
 export const name = 'file-explorer'
-export const inject = ['slots']
+export const inject = ['slots', 'sessions', 'layout']
 
 const API = '/plugins/dsh-file-explorer/api'
-
-/* ---------- tiny store: state buka/tutup panel (dipakai dua entry slot) ---------- */
-// Auto-terbuka saat load supaya panel langsung terlihat; tombol 📁 di sidebar
-// footer untuk toggle. Kalau mau default tertutup, ubah jadi false.
-let panelOpen = true
-const storeListeners = new Set<() => void>()
-function togglePanel(): void {
-  panelOpen = !panelOpen
-  for (const listener of storeListeners) listener()
-}
-function subscribePanel(listener: () => void): () => void {
-  storeListeners.add(listener)
-  return () => { storeListeners.delete(listener) }
-}
-function usePanelOpen(): boolean {
-  return useSyncExternalStore(subscribePanel, () => panelOpen)
-}
 
 /* ---------- wire types (cocok dengan host half) ---------- */
 interface WorkspaceInfo { id: string; title: string; path: string }
@@ -42,6 +42,12 @@ interface FsEntry { name: string; type: 'file' | 'directory' | 'other'; size?: n
 interface ListResponse { path: string; entries: FsEntry[] }
 interface ReadResponse { path: string; text: string }
 interface ApiError { error?: string; detail?: string }
+/** State viewer: teks ATAU preview gambar ATAU catatan (mis. file biner). */
+interface ViewerState { path: string; text?: string; imageUrl?: string; note?: string }
+
+/** Mirror batas /raw di host: gambar lebih besar dilewati dengan catatan. */
+const MAX_RAW_BYTES = 8 * 1024 * 1024
+const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
@@ -59,33 +65,140 @@ function parentOf(path: string): string {
   return idx <= 0 ? '/' : path.slice(0, idx)
 }
 
-/* ---------- panel ---------- */
-const PANEL_STYLE: React.CSSProperties = {
-  position: 'fixed', top: 0, right: 0, bottom: 0, width: 380,
-  display: 'flex', flexDirection: 'column',
-  background: 'var(--color-bg, #17181c)', color: 'var(--color-text, #e6e6e6)',
-  borderLeft: '1px solid rgba(128,128,128,0.25)',
-  boxShadow: '-8px 0 24px rgba(0,0,0,0.35)',
-  pointerEvents: 'auto', zIndex: 1000, fontFamily: 'var(--font-mono, monospace)', fontSize: 13,
+/** Cocokkan cwd canonical sesi ke workspace terdaftar (exact, lalu case-insensitive). */
+function matchWorkspace(workspaces: WorkspaceInfo[], cwdPath: string): WorkspaceInfo | undefined {
+  const exact = workspaces.find((w) => w.path === cwdPath)
+  if (exact) return exact
+  const lower = cwdPath.toLowerCase()
+  return workspaces.find((w) => w.path.toLowerCase() === lower)
 }
 
-function FileExplorerPanel(_props: Record<string, unknown>): React.ReactElement | null {
-  const open = usePanelOpen()
+/* ---------- fallback stabil kalau service sessions absen ---------- */
+const EMPTY_LIST: SessionListState = {
+  ids: [], byId: {}, current: undefined, phase: 'ready',
+  subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+}
+const NO_LIST: ISessions['list'] = {
+  getSnapshot: () => EMPTY_LIST,
+  subscribe: () => () => {},
+}
+
+/* ---------- icons (feather-style inline SVG, warna ikut currentColor) ---------- */
+function Icon({ children, color }: { children: React.ReactNode; color?: string }) {
+  return (
+    <span className="dshfe-icon" style={color !== undefined ? { color } : undefined}>
+      <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {children}
+      </svg>
+    </span>
+  )
+}
+const FolderIcon = ({ color }: { color?: string }) => <Icon color={color}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></Icon>
+const FileIcon = ({ color }: { color?: string }) => <Icon color={color}><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="13 2 13 9 20 9" /></Icon>
+const UpIcon = ({ color }: { color?: string }) => <Icon color={color}><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></Icon>
+const DownIcon = ({ color }: { color?: string }) => <Icon color={color}><polyline points="6 9 12 15 18 9" /></Icon>
+const CloseIcon = ({ color }: { color?: string }) => <Icon color={color}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Icon>
+
+/* ---------- stylesheet scoped (hover/focus tidak bisa inline style) ---------- */
+const PANEL_CSS = `
+.dshfe-panel{width:100%;height:100%;display:flex;flex-direction:column;min-width:0;
+  background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);
+  font-family:var(--dsw-font-family);font-size:14px;line-height:22px}
+.dshfe-header{flex:none;display:flex;align-items:center;gap:8px;padding:14px 12px 12px;
+  border-bottom:1px solid var(--dsw-alias-border-l2)}
+.dshfe-title{flex:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:14px;font-weight:500;line-height:20px}
+.dshfe-select-wrap{position:relative;flex:1;min-width:0;display:flex;align-items:center}
+.dshfe-select{flex:1;min-width:0;height:32px;padding:0 24px 0 8px;border:1px solid var(--dsw-alias-border-l2);
+  border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);
+  font:var(--dsw-font-xs-13);cursor:pointer;-webkit-appearance:none;appearance:none}
+.dshfe-select:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
+.dshfe-select-caret{position:absolute;right:6px;pointer-events:none}
+.dshfe-iconbtn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;
+  border:none;border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.dshfe-iconbtn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dshfe-iconbtn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
+.dshfe-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;
+  color:var(--dsw-alias-label-tertiary)}
+.dshfe-crumbs{flex:none;display:flex;align-items:center;gap:4px;padding:6px 8px;
+  border-bottom:1px solid var(--dsw-alias-border-l1)}
+.dshfe-crumbs-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-tertiary)}
+.dshfe-tree{flex:1;min-height:0;overflow-y:auto;padding:4px}
+.dshfe-row{display:flex;align-items:center;gap:6px;height:30px;padding:0 8px;border-radius:8px;
+  cursor:pointer;font:var(--dsw-font-xs-13);user-select:none}
+.dshfe-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dshfe-row-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dshfe-row-size{flex:none;font:var(--dsw-font-xxxs-11);color:var(--dsw-alias-label-tertiary)}
+.dshfe-note{padding:8px 12px;font:var(--dsw-font-xs-13);color:var(--dsw-alias-label-tertiary)}
+.dshfe-error{padding:8px 12px;font:var(--dsw-font-xs-13);color:var(--dsw-alias-state-error-primary)}
+.dshfe-viewer{flex:none;height:45%;display:flex;flex-direction:column;min-height:0;
+  border-top:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-markdown-code-block)}
+.dshfe-viewer-head{flex:none;display:flex;align-items:center;gap:8px;padding:8px 12px;
+  background:var(--dsw-alias-markdown-code-block-banner)}
+.dshfe-viewer-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:var(--dsw-font-xxs-12);color:var(--dsw-alias-label-secondary)}
+.dshfe-viewer-pre{flex:1;min-height:0;margin:0;overflow:auto;padding:8px 12px;
+  font:var(--dsw-font-markdown-code-block);color:var(--dsw-alias-label-primary);
+  white-space:pre;tab-size:2}
+.dshfe-viewer-imgwrap{flex:1;min-height:0;overflow:auto;display:flex;align-items:flex-start;
+  justify-content:center;padding:12px}
+.dshfe-viewer-img{max-width:100%;height:auto;border-radius:8px}
+.dshfe-footer-btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;
+  border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);
+  cursor:pointer;font:var(--dsw-font-xs-13)}
+.dshfe-footer-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+`
+
+/* ---------- panel (kolom details layout, bukan overlay) ---------- */
+function FileExplorerPanel(props: { sessions?: ISessions; closeDetails?: () => void; openDetails?: () => void }): React.ReactElement {
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
-  const [workspaceId, setWorkspaceId] = useState<string>('')
+  const [workspaceId, setWorkspaceId] = useState('')
   const [cwd, setCwd] = useState('')
   const [entries, setEntries] = useState<FsEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [viewing, setViewing] = useState<{ path: string; text: string } | null>(null)
+  const [viewing, setViewing] = useState<ViewerState | null>(null)
+  // Override manual bertahan sampai sesi aktif berganti; bukan state render.
+  const manualRef = useRef(false)
+  const lastSessionRef = useRef<string | undefined>(undefined)
+
+  // Panel selalu terbuka saat kolom details tampil: auto-open saat scope sesi
+  // materialisasi (paritas dengan perilaku auto-open versi overlay).
+  useEffect(() => { props.openDetails?.() }, [props.openDetails])
+
+  // Sesi aktif + cwd canonical-nya (SnapshotStore kompatibel useSyncExternalStore).
+  const list = props.sessions?.list ?? NO_LIST
+  const listSnapshot = useSyncExternalStore(list.subscribe, list.getSnapshot)
+  const currentId = listSnapshot.current
+  const currentCwd = currentId === undefined ? undefined : listSnapshot.byId?.[currentId]?.cwd
 
   useEffect(() => {
     getJson<WorkspaceInfo[]>(API + '/workspaces')
-      .then((ws) => {
-        setWorkspaces(ws)
-        if (ws.length > 0) { setWorkspaceId(ws[0].id); setCwd(ws[0].path) }
-      })
+      .then((ws) => setWorkspaces(ws))
       .catch((err: Error) => setError(err.message))
   }, [])
+
+  const pick = useCallback((ws: WorkspaceInfo) => {
+    setWorkspaceId(ws.id)
+    setCwd(ws.path)
+    setViewing(null)
+  }, [])
+
+  // Auto-select: workspace tempat sesi aktif berada. Tanpa sesi (hero) →
+  // workspace pertama. Override manual dipertahankan sampai sesi berganti.
+  useEffect(() => {
+    if (workspaces.length === 0) return
+    if (currentId !== lastSessionRef.current) {
+      lastSessionRef.current = currentId
+      manualRef.current = false
+      const target = currentCwd !== undefined ? matchWorkspace(workspaces, currentCwd) : undefined
+      if (target) { pick(target); return }
+      if (currentId === undefined) { pick(workspaces[0]); return }
+    }
+    if (manualRef.current) return
+    if (workspaceId === '') pick(workspaces[0])
+  }, [workspaces, currentId, currentCwd, pick])
 
   const load = useCallback(async (ws: string, path: string) => {
     try {
@@ -103,60 +216,107 @@ function FileExplorerPanel(_props: Record<string, unknown>): React.ReactElement 
     if (workspaceId && cwd) void load(workspaceId, cwd)
   }, [workspaceId, load])
 
-  const openFile = useCallback(async (path: string) => {
+  const openFile = useCallback(async (path: string, size?: number) => {
     try {
       setError(null)
+      const name = path.split('/').pop() ?? ''
+      // Gambar → preview via /raw (host apply containment yang sama).
+      if (IMAGE_EXT.test(name)) {
+        if (size !== undefined && size > MAX_RAW_BYTES) {
+          setViewing({ path, note: 'Gambar terlalu besar untuk dipratinjau.' })
+          return
+        }
+        setViewing({
+          path,
+          imageUrl: API + '/raw?workspace=' + encodeURIComponent(workspaceId) + '&path=' + encodeURIComponent(path),
+        })
+        return
+      }
       const data = await getJson<ReadResponse>("" + API + '/read?workspace=' + encodeURIComponent(workspaceId) + '&path=' + encodeURIComponent(path))
       setViewing({ path, text: data.text })
     } catch (err) {
-      setError((err as Error).message)
+      const message = (err as Error).message
+      if (message.startsWith('binary-file')) {
+        setViewing({ path, note: 'File biner — tidak bisa ditampilkan sebagai teks.' })
+      } else {
+        setError(message)
+      }
     }
   }, [workspaceId])
-
-  if (!open) return null
 
   const dirs = (entries ?? []).filter((e) => e.type === 'directory')
   const files = (entries ?? []).filter((e) => e.type !== 'directory')
 
   return (
-    <div style={PANEL_STYLE}>
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid rgba(128,128,128,0.2)', display: 'flex', gap: 8, alignItems: 'center' }}>
-        <strong style={{ fontSize: 13 }}>Files</strong>
-        <select
-          value={workspaceId}
-          onChange={(e) => { const ws = workspaces.find((w) => w.id === e.target.value); if (ws) { setWorkspaceId(ws.id); setCwd(ws.path); setViewing(null) } }}
-          style={{ flex: 1, background: 'rgba(255,255,255,0.06)', color: 'inherit', border: '1px solid rgba(128,128,128,0.3)', borderRadius: 4, padding: '3px 6px', minWidth: 0 }}
-        >
-          {workspaces.map((w) => <option key={w.id} value={w.id}>{w.title}</option>)}
-        </select>
-        <button onClick={togglePanel} title='Close' style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 16 }}>×</button>
+    <div className="dshfe-panel">
+      <div className="dshfe-header">
+        <span className="dshfe-title">Files</span>
+        <span className="dshfe-select-wrap">
+          <select
+            className="dshfe-select"
+            value={workspaceId}
+            onChange={(e) => {
+              const ws = workspaces.find((w) => w.id === e.target.value)
+              if (!ws) return
+              manualRef.current = true
+              pick(ws)
+            }}
+            title={workspaces.find((w) => w.id === workspaceId)?.path ?? ''}
+          >
+            {workspaces.map((w) => <option key={w.id} value={w.id}>{w.title}</option>)}
+          </select>
+          <span className="dshfe-select-caret"><DownIcon /></span>
+        </span>
+        <button className="dshfe-iconbtn" title="Close panel"
+          onClick={() => props.closeDetails?.()}>
+          <CloseIcon color="inherit" />
+        </button>
       </div>
-      <div style={{ padding: '6px 12px', borderBottom: '1px solid rgba(128,128,128,0.15)', display: 'flex', gap: 6, alignItems: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-        <button onClick={() => { setViewing(null); void load(workspaceId, parentOf(cwd)) }} title='Up' style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}>↑</button>
-        <span title={cwd} style={{ opacity: 0.7, overflow: 'hidden', textOverflow: 'ellipsis' }}>{cwd}</span>
+      <div className="dshfe-crumbs">
+        <button className="dshfe-iconbtn" title="Parent folder"
+          onClick={() => { setViewing(null); void load(workspaceId, parentOf(cwd)) }}>
+          <UpIcon color="inherit" />
+        </button>
+        <span className="dshfe-crumbs-path" title={cwd}>{cwd}</span>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-        {error && <div style={{ padding: '6px 12px', color: '#ff7b72' }}>{error}</div>}
-        {entries === null && !error && <div style={{ padding: '6px 12px', opacity: 0.6 }}>Loading…</div>}
+      <div className="dshfe-tree">
+        {error && <div className="dshfe-error">{error}</div>}
+        {entries === null && !error && <div className="dshfe-note">Loading…</div>}
         {dirs.map((e) => (
-          <div key={e.path} onClick={() => { setViewing(null); void load(workspaceId, e.path) }}
-            style={{ padding: '3px 12px', cursor: 'pointer', display: 'flex', gap: 6 }}>
-            <span style={{ opacity: 0.6 }}>📁</span><span>{e.name}</span>
+          <div key={e.path} className="dshfe-row" title={e.path}
+            onClick={() => { setViewing(null); void load(workspaceId, e.path) }}>
+            <FolderIcon />
+            <span className="dshfe-row-name">{e.name}</span>
           </div>
         ))}
         {files.map((e) => (
-          <div key={e.path} onClick={() => void openFile(e.path)}
-            style={{ padding: '3px 12px', cursor: 'pointer', display: 'flex', gap: 6 }}>
-            <span style={{ opacity: 0.6 }}>📄</span><span>{e.name}</span>
-            {typeof e.size === 'number' && <span style={{ marginLeft: 'auto', opacity: 0.45, fontSize: 11 }}>{e.size}</span>}
+          <div key={e.path} className="dshfe-row" title={e.path}
+            onClick={() => void openFile(e.path, e.size)}>
+            <FileIcon />
+            <span className="dshfe-row-name">{e.name}</span>
+            {typeof e.size === 'number' && <span className="dshfe-row-size">{e.size}</span>}
           </div>
         ))}
-        {entries !== null && entries.length === 0 && !error && <div style={{ padding: '6px 12px', opacity: 0.6 }}>(empty)</div>}
+        {entries !== null && entries.length === 0 && !error && <div className="dshfe-note">(empty)</div>}
       </div>
       {viewing && (
-        <div style={{ height: '45%', borderTop: '1px solid rgba(128,128,128,0.2)', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '4px 12px', opacity: 0.7, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{viewing.path}</div>
-          <pre style={{ flex: 1, margin: 0, overflow: 'auto', padding: '8px 12px', whiteSpace: 'pre', tabSize: 2 }}>{viewing.text}</pre>
+        <div className="dshfe-viewer">
+          <div className="dshfe-viewer-head">
+            <FileIcon />
+            <span className="dshfe-viewer-path" title={viewing.path}>{viewing.path}</span>
+            <button className="dshfe-iconbtn" title="Close file" onClick={() => setViewing(null)}>
+              <CloseIcon color="inherit" />
+            </button>
+          </div>
+          {viewing.imageUrl !== undefined ? (
+            <div className="dshfe-viewer-imgwrap">
+              <img className="dshfe-viewer-img" src={viewing.imageUrl} alt={viewing.path} />
+            </div>
+          ) : viewing.note !== undefined ? (
+            <div className="dshfe-note">{viewing.note}</div>
+          ) : (
+            <pre className="dshfe-viewer-pre">{viewing.text}</pre>
+          )}
         </div>
       )}
     </div>
@@ -164,14 +324,11 @@ function FileExplorerPanel(_props: Record<string, unknown>): React.ReactElement 
 }
 
 /* ---------- tombol di kaki sidebar ---------- */
-function FilesFooterAction(props: { wide?: boolean }): React.ReactElement {
+function FilesFooterAction(props: { wide?: boolean; openDetails?: () => void }): React.ReactElement {
   return (
-    <button
-      onClick={togglePanel}
-      title='File explorer'
-      style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', fontSize: 13 }}
-    >
-      <span>📁</span>
+    <button className="dshfe-footer-btn" title="File explorer"
+      onClick={() => props.openDetails?.()}>
+      <FolderIcon color="inherit" />
       {props.wide ? <span>Files</span> : null}
     </button>
   )
@@ -179,23 +336,49 @@ function FilesFooterAction(props: { wide?: boolean }): React.ReactElement {
 
 /* ---------- registrasi ---------- */
 export function apply(ctx: Context): void {
+  const sessions = (ctx as unknown as { sessions?: ISessions }).sessions
+  const layout = (ctx as unknown as {
+    layout?: { openDetails(): void; closeDetails(): void }
+  }).layout
+
+  // layout actions bisa belum "wired" sebelum root entry mount — jangan
+  // biarkan error itu membunuh render panel.
+  const openPanel = () => { try { layout?.openDetails() } catch { /* belum wired */ } }
+  const closePanel = () => { try { layout?.closeDetails() } catch { /* belum wired */ } }
+
+  // Stylesheet scoped + disposable: hover/focus butuh pseudo-class yang
+  // tidak bisa dinyatakan di inline style; dibuang saat plugin unload.
+  ctx.effect(() => {
+    const el = document.createElement('style')
+    el.setAttribute('data-dsh-file-explorer', '')
+    el.textContent = PANEL_CSS
+    document.head.appendChild(el)
+    return () => { el.remove() }
+  })
+
   // WAJIB lewat slots.inject: register langsung di apply bisa race dengan
-  // deklarasi slot oleh ui-layout/ui-sidebar (error: slot is not declared).
-  // Pattern resmi = ctx.slots.inject(slotName, () => ctx.slots.register(...))
-  // — callback dijalankan begitu slot-nya terdeklarasi.
+  // deklarasi slot oleh ui-layout/ui-conversation (error: slot is not
+  // declared). Pattern resmi = ctx.slots.inject(slotName, () =>
+  // ctx.slots.register(...)) — callback dijalankan begitu slot-nya
+  // terdeklarasi.
   const slots = ctx as unknown as {
     slots: {
       inject(slotName: string, callback: () => void): void
       register(spec: unknown, component: unknown): void
     }
   }
-  // Slot ber-kind 'list' WAJIB options.id (identitas entry di ledger list).
-  slots.slots.inject('shell.overlay', () => slots.slots.register(
-    { name: 'shell.overlay', id: 'file-explorer-panel', inject: () => ({}) },
+  // Seat "details" (kolom kanan layout): menggantikan panel tool-details
+  // bawaan — kolom beneran yang memakan layout (keputusan pemilik repo).
+  // Slot single TIDAK boleh register di priority yang sama dengan occupant
+  // (default 0 → throw "already has a registration at priority 0"); shadow
+  // wajib priority LEBIH RENDAH (lowest renders) → -1.
+  slots.slots.inject('details', () => slots.slots.register(
+    { name: 'details', priority: -1, inject: () => ({ sessions, closeDetails: closePanel, openDetails: openPanel }) },
     FileExplorerPanel,
   ))
+  // Slot ber-kind 'list' WAJIB options.id (identitas entry di ledger list).
   slots.slots.inject('sidebar.footer.action', () => slots.slots.register(
-    { name: 'sidebar.footer.action', id: 'file-explorer-toggle', inject: () => ({}) },
+    { name: 'sidebar.footer.action', id: 'file-explorer-toggle', inject: () => ({ openDetails: openPanel }) },
     FilesFooterAction,
   ))
 }
