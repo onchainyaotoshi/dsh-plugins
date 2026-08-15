@@ -85,11 +85,13 @@ const AlertIcon = ({ color }: { color?: string }) => <Icon color={color}><circle
 
 /* ---------- stylesheet scoped (hover/focus tidak bisa inline style) ---------- */
 const PANEL_CSS = `
-.dshgs-root{box-sizing:border-box;width:calc(100% - 2 * var(--dsh-composer-side-clearance, 16px));
-  max-width:var(--dsh-composer-card-max-width, 780px);margin:0 auto}
-.dshgs-strip{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:34px;padding:4px 6px;
-  border:1px solid var(--dsw-alias-border-l2);border-radius:8px;
-  background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);
+.dshgs-root{box-sizing:border-box;
+  width:calc(100% - 2 * var(--dsh-composer-side-clearance, 16px) - 4 * var(--dsh-composer-dock-inset, 8px));
+  max-width:calc(var(--dsh-composer-card-max-width, 780px) - 4 * var(--dsh-composer-dock-inset, 8px));
+  margin:0 auto}
+.dshgs-strip{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:36px;padding:5px 12px;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:12px;
+  background:var(--dsw-specific-tip);color:var(--dsw-alias-label-primary);
   font-family:var(--dsw-font-family);font-size:13px;line-height:20px}
 .dshgs-chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;
   border:none;border-radius:999px;background:transparent;color:var(--dsw-alias-label-secondary);
@@ -108,12 +110,12 @@ const PANEL_CSS = `
 .dshgs-iconbtn.spinning svg{animation:dshgs-spin 1s linear infinite}
 @keyframes dshgs-spin{to{transform:rotate(360deg)}}
 .dshgs-icon{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px}
-.dshgs-panel{margin-top:6px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;
-  background:var(--dsw-alias-bg-layer-1);box-shadow:var(--dsw-shadow-lv3);
+.dshgs-panel{margin-top:8px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;
+  background:var(--dsw-specific-tip);box-shadow:var(--dsw-shadow-lv3);
   max-height:360px;overflow-y:auto}
 .dshgs-panel-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;
   border-bottom:1px solid var(--dsw-alias-border-l1);position:sticky;top:0;
-  background:var(--dsw-alias-bg-layer-1);z-index:2}
+  background:var(--dsw-specific-tip);z-index:2}
 .dshgs-panel-title{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600}
 .dshgs-ws-tabs{display:flex;gap:4px;flex-wrap:wrap}
 .dshgs-ws-tab{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;
