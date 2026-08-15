@@ -44,6 +44,15 @@ ada.
 
 ## Instalasi
 
+> **Status: belum di-publish ke npm.** Untuk sekarang, pasang dari checkout
+> monorepo via link lokal:
+>
+> ```sh
+> dsh plugin --profile web add link:/<path checkout dsh-plugins>/packages/dsh-tunnel-loopback
+> ```
+>
+> Instruksi registry di bawah berlaku setelah paket ini di-publish.
+
 ```sh
 dsh plugin --profile web add dsh-tunnel-loopback
 ```
