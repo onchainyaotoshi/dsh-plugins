@@ -37,6 +37,9 @@ packages/
   — JANGAN register langsung di apply(). Register langsung = race dengan deklarasi
   slot oleh ui-layout/ui-sidebar → error "slot is not declared" (kejadian nyata
   15 Aug 2026).
+- **Slot ber-kind `list` WAJIB `options.id`** (identitas entry di ledger list)
+  — tanpa id → error `list slot "..." requires options.id` (kejadian nyata
+  15 Aug 2026).
 - Tambah plugin baru: salin packages/file-explorer → ganti nama + isi → otomatis
   masuk workspace (packages/*). Perbarui daftar di bagian "Struktur".
 - Test di VPS: dsh plugin --profile web add ./packages/<nama> → verifikasi

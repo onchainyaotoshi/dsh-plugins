@@ -189,12 +189,13 @@ export function apply(ctx: Context): void {
       register(spec: unknown, component: unknown): void
     }
   }
+  // Slot ber-kind 'list' WAJIB options.id (identitas entry di ledger list).
   slots.slots.inject('shell.overlay', () => slots.slots.register(
-    { name: 'shell.overlay', inject: () => ({}) },
+    { name: 'shell.overlay', id: 'file-explorer-panel', inject: () => ({}) },
     FileExplorerPanel,
   ))
   slots.slots.inject('sidebar.footer.action', () => slots.slots.register(
-    { name: 'sidebar.footer.action', inject: () => ({}) },
+    { name: 'sidebar.footer.action', id: 'file-explorer-toggle', inject: () => ({}) },
     FilesFooterAction,
   ))
 }
