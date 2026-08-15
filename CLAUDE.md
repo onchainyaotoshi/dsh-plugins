@@ -1,6 +1,6 @@
 # dsh-plugins — catatan untuk agent (DSH / Claude Code)
 
-Monorepo plugin DeepSeek Harness milik firman. **Baca ini sebelum ngoding di repo ini.**
+Monorepo plugin DeepSeek Harness. **Baca ini sebelum ngoding di repo ini.**
 
 ## Keputusan terkunci (jangan diubah tanpa konfirmasi pemilik)
 

@@ -1,6 +1,6 @@
 # dsh-plugins
 
-Monorepo plugin [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) milik firman.
+Monorepo plugin [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) — kumpulan plugin DSH buatan komunitas.
 Satu repo, banyak paket npm (opsi B — lihat [ADR topologi](docs/decisions/2026-08-15-plugin-monorepo-topology.md)).
 
 ## Daftar plugin
@@ -20,7 +20,7 @@ pnpm watch          # watch client bundle (untuk iterasi UI)
 ## Cara test di VPS
 
 ```sh
-cd /home/firman/dsh-plugins && pnpm build
+cd dsh-plugins && pnpm build
 dsh plugin --profile web add ./packages/file-explorer
 dsh --profile web --dump-config | grep file-explorer   # layer harus muncul
 sudo systemctl restart dsh                            # SEKALI, di jeda antar turn!

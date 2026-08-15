@@ -2,7 +2,7 @@
   "name": "dsh-plugins",
   "private": true,
   "version": "0.0.0",
-  "description": "Monorepo plugin DeepSeek Harness milik firman (opsi B — satu repo, banyak paket).",
+  "description": "Monorepo plugin DeepSeek Harness (satu repo, banyak paket npm).",
   "scripts": {
     "build": "pnpm -r build",
     "watch": "pnpm -r --parallel watch"

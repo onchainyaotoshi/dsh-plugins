@@ -4,9 +4,9 @@
 
 ## Konteks
 
-Firman mau membuat beberapa plugin DSH (dimulai dari dsh-file-explorer — panel
-tree file workspace) dan mempublikasikannya agar bisa dipakai orang lain. Tiga pola
-repo dipertimbangkan:
+Pemilik repo mau membuat beberapa plugin DSH (dimulai dari dsh-file-explorer —
+panel tree file workspace) dan mempublikasikannya agar bisa dipakai orang lain.
+Tiga pola repo dipertimbangkan:
 
 - **A — satu plugin satu repo**: simpel, independen penuh, tapi config build
   (tsdown dll) terduplikasi di tiap repo dan sulit berbagi kode antar plugin.
@@ -18,8 +18,8 @@ repo dipertimbangkan:
 
 ## Keputusan
 
-**Opsi B.** Satu repo /home/firman/dsh-plugins/ (di luar workspace agent
-/home/firman/deepseek-harness) berisi semua plugin pribadi.
+**Opsi B.** Satu repo monorepo (di luar workspace agent tempat dsh
+berjalan) berisi semua plugin pribadi.
 
 ## Konsekuensi
 
@@ -39,6 +39,5 @@ repo dipertimbangkan:
 - Opsi A ditolak: duplikasi boilerplate build per repo.
 - Opsi C ditolak: overkill untuk kasus ini; bisa ditinjau ulang kalau ada rencana
   kontribusi balik ke upstream.
-- Keputusan ini juga dirangkum di CLAUDE.md workspace
-  (/home/firman/deepseek-harness/CLAUDE.md) agar sesi agent DSH di workspace
-  utama ikut tahu tanpa harus membuka repo ini.
+- Keputusan ini juga dirangkum di CLAUDE.md workspace utama deployment
+  agar sesi agent DSH di workspace itu ikut tahu tanpa harus membuka repo ini.
