@@ -49,6 +49,21 @@ cordis.patch.yml      # layer: - insert: [{ id: git-state, name: dsh-git-state }
 
 ## Lesson learned (jangan diulang)
 
+- **Rebuild produksi saat browser aktif → "failed to import loader entry"**
+  (kejadian 18 Aug 2026): tsdown menulis `lib/client.js` di tempat; watcher
+  client-modules dsh bisa melihat file SETENGAH JADI → rev baru dengan bundle
+  terpotong → browser melempar "bundle script ... failed to load" (log dsh
+  tetap bersih, endpoint setelah build selesai 200 + shim utuh). Bukan
+  kerusakan permanen — recovery = hard refresh (`Ctrl+Shift+R`). Sebelum
+  menyimpulkan bundle rusak, cek dulu: `curl -sS -o /dev/null -w '%{http_code}'
+  http://127.0.0.1:3080/plugins/dsh-git-state/client.js` (200) + shim banner/
+  footer + `node --check lib/client.js`. Kalau semua OK, tinggal refresh.
+  Idealnya rebuild client dilakukan saat pemilik tidak sedang membuka GUI.
+- **Lebar strip WAJIB ikut geometri shell**: pakai `--dsh-composer-side-clearance`
+  (16px) + `--dsh-composer-card-max-width` (780px) dari root conversation —
+  `width:calc(100% - 2*var(--dsh-composer-side-clearance,16px));
+  max-width:var(--dsh-composer-card-max-width,780px); margin:0 auto`.
+  Tanpa ini strip mepet tepi kolom sementara composer ada margin.
 - **`conversation.composer.dock` TOLAK elemen interaktif**: kontrak slot itu
   eksplisit — "Anything the user must click belongs in the tool row instead"
   (`input.left`/`.right`). Strip ini butuh klik (expand + refresh), jadi WAJIB
