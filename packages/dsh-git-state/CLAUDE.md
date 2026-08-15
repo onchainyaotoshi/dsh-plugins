@@ -49,6 +49,15 @@ cordis.patch.yml      # layer: - insert: [{ id: git-state, name: dsh-git-state }
 
 ## Lesson learned (jangan diulang)
 
+- **Perubahan bundle client TIDAK menyebar ke tab yang sudah terbuka**
+  (kejadian 18 Aug 2026): bundle dimuat SEKALI saat page boot; pindah
+  workspace di sidebar = navigasi SPA internal yang TIDAK me-load ulang
+  script — tab yang di-boot sebelum rebuild terus menampilkan versi lama
+  sampai halamannya di-reload PENUH. Gejala khas: satu workspace terlihat
+  versi baru, workspace lain (di tab lama) tampak versi lama — padahal
+  server hanya punya satu bundle. Solusi paling tegas: restart dsh → semua
+  tab kehilangan koneksi → dipaksa reload total serempak. Jangan buang waktu
+  menyalahkan cache browser.
 - **Rebuild produksi saat browser aktif → "failed to import loader entry"**
   (kejadian 18 Aug 2026): tsdown menulis `lib/client.js` di tempat; watcher
   client-modules dsh bisa melihat file SETENGAH JADI → rev baru dengan bundle
