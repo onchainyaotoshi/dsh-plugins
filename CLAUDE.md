@@ -33,6 +33,10 @@ packages/
   `var module = { exports: {} }; var exports = module.exports;` (banner) +
   `return module.exports;` (footer). Tanpa shim: "exports is not defined" saat
   materialisasi (kejadian nyata 15 Aug 2026). JANGAN dihapus.
+- **Register slot UI WAJIB lewat `ctx.slots.inject(namaSlot, () => ctx.slots.register(...))`**
+  — JANGAN register langsung di apply(). Register langsung = race dengan deklarasi
+  slot oleh ui-layout/ui-sidebar → error "slot is not declared" (kejadian nyata
+  15 Aug 2026).
 - Tambah plugin baru: salin packages/file-explorer → ganti nama + isi → otomatis
   masuk workspace (packages/*). Perbarui daftar di bagian "Struktur".
 - Test di VPS: dsh plugin --profile web add ./packages/<nama> → verifikasi
@@ -49,3 +53,6 @@ packages/
   file repo ini. Identitas git = noreply (onchainyaotoshi@users.noreply.github.com),
   sudah diset repo-lokal — jangan diubah ke email pribadi. Sebelum push: audit
   grep + git log (lihat aturan lengkap di CLAUDE.md workspace utama).
+- **Disiplin belajar: SETIAP insiden/error yang makan waktu → tambah baris
+  pelajaran di file ini SEBELUM commit fix-nya.** Inilah "progressive learning"
+  repo ini — tanpa baris baru, kesalahan yang sama bisa terulang di sesi baru.
