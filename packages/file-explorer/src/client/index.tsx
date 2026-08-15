@@ -20,7 +20,9 @@ export const inject = ['slots']
 const API = '/plugins/dsh-file-explorer/api'
 
 /* ---------- tiny store: state buka/tutup panel (dipakai dua entry slot) ---------- */
-let panelOpen = false
+// Auto-terbuka saat load supaya panel langsung terlihat; tombol 📁 di sidebar
+// footer untuk toggle. Kalau mau default tertutup, ubah jadi false.
+let panelOpen = true
 const storeListeners = new Set<() => void>()
 function togglePanel(): void {
   panelOpen = !panelOpen
