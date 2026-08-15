@@ -293,9 +293,9 @@ const DATA = {
       { ref: 'stash@{0}', msg: 'WIP: ganti backoff ke exponential' },
     ],
     worktrees: [
-      { path: '~/api-service', branch: 'main', dirty: false, current: true },
-      { path: '~/wt/api-service-feat-x', branch: 'feat/x', dirty: true, current: false },
-      { path: '~/wt/api-service-fix-y', branch: 'fix/y', dirty: false, current: false },
+      { path: '~/api-service', branch: 'main', dirty: false, main: true },
+      { path: '~/wt/api-service-feat-x', branch: 'feat/x', dirty: true, active: true },
+      { path: '~/wt/api-service-fix-y', branch: 'fix/y', dirty: false, inUse: true },
     ],
     prs: [
       { number: 128, title: 'feat: endpoint v2 + versi API', head: 'feat/x' },
@@ -310,7 +310,7 @@ const DATA = {
     branch: 'master', ahead: 0, behind: 0,
     changes: { staged: 0, unstaged: 0, untracked: 0, total: 0, files: [] },
     stashes: [],
-    worktrees: [ { path: '~/lib-utils', branch: 'master', dirty: false, current: true } ],
+    worktrees: [ { path: '~/lib-utils', branch: 'master', dirty: false, main: true } ],
     prs: [],
   },
 };
@@ -394,7 +394,11 @@ function renderPanel() {
       return '<div class="row"><span class="path" style="color:var(--label-secondary)">' + esc(s.ref) + '</span><span class="meta">' + esc(s.msg) + '</span></div>';
     }).join('') || '<div class="note">Tidak ada stash.</div>';
     const wts = d.worktrees.map(function (w) {
-      return '<div class="row"><span class="dirty-dot ' + (w.dirty ? '' : 'clean') + '"></span><span class="path">' + esc(w.path) + '</span><span class="tag">' + esc(w.branch) + '</span>' + (w.current ? '<span class="tag cur">aktif</span>' : '') + '</div>';
+      return '<div class="row"><span class="dirty-dot ' + (w.dirty ? '' : 'clean') + '"></span><span class="path">' + esc(w.path) + '</span><span class="tag">' + esc(w.branch) + '</span>'
+        + (w.main ? '<span class="tag">utama</span>' : '')
+        + (w.active ? '<span class="tag cur">aktif</span>' : '')
+        + (w.inUse ? '<span class="tag">dipakai</span>' : '')
+        + '</div>';
     }).join('');
     const prs = d.prs.map(function (p) {
       return '<div class="row"><span class="tag">#' + p.number + '</span><a class="pr-link path" href="#">' + esc(p.title) + '</a><span class="meta">' + esc(p.head) + '</span></div>';

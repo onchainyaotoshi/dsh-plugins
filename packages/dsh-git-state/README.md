@@ -10,9 +10,13 @@ terdaftar. Klik strip untuk melihat detail.
 - Strip ringkas (slot `conversation.input.dock`, baris paling atas) — chip
   bernilai nol disembunyikan; bersih ditandai "bersih"; bukan repo git ditandai
   redup.
+- **Deteksi worktree aktif**: strip menampilkan branch/ahead-behind/perubahan
+  dari checkout yang sedang dikerjakan (riwayat `workdir` bash sesi tab itu +
+  proses hidup), bukan checkout utama. Multi-tab dengan worktree berbeda aman —
+  tiap tab menghitung sendiri dari sesinya.
 - Panel detail: file berubah (kode XY porcelain), daftar stash, daftar worktree
-  (titik peringatan = ada perubahan, tag "aktif"), daftar PR open (link ke
-  GitHub).
+  dengan tag `utama` / `aktif` / `dipakai` (proses hidup) / `dikerjakan sesi
+  lain` + jumlah perubahan tiap worktree, daftar PR open (link ke GitHub).
 - Auto-select workspace mengikuti sesi aktif (cwd canonical); override manual
   lewat tab workspace bertahan sampai sesi berganti.
 - Auto-refresh 30 detik + tombol refresh manual.
@@ -40,4 +44,6 @@ UI ini tetap di balik autentikasi deployment (mis. Cloudflare Access).
 - PR open butuh `gh` CLI terautentikasi di host; tanpa itu chip PR
   disembunyikan (graceful).
 - Strip scope sesi — tidak muncul di layar hero (tanpa sesi aktif).
-- Worktree non-utama dicek dirty-nya (cap 20); daftar file di-cap 200.
+- Worktree non-utama dicek status & sync-nya (cap 20); daftar file di-cap 200.
+- Deteksi "aktif" mengandalkan riwayat bash sesi DSH; kerja lewat terminal
+  eksternal (ssh) hanya terlihat lewat proses hidup (tag `dipakai`).

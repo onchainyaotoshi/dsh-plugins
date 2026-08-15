@@ -1,10 +1,10 @@
 /**
- * dsh-git-state — browser half.
+ * dsh-git-state - browser half.
  * Slot `conversation.input.dock` (kind list, scope session): strip status git
  * satu baris di atas composer (order -10 → baris paling atas dock, di atas
  * todo/goal/queue). Klik strip → ekspansi panel detail (file berubah, stash,
  * worktree, PR). Data dari route HTTP host half (same-origin fetch), BUKAN
- * RPC /api — mandiri dari allowlist apiproxy (pola dsh-file-explorer).
+ * RPC /api - mandiri dari allowlist apiproxy (pola dsh-file-explorer).
  *
  * Workspace aktif dicocokkan dari ctx.sessions.list (cwd canonical ↔
  * workspace.path); override manual lewat tab workspace bertahan sampai sesi
@@ -31,14 +31,25 @@ interface Changes {
   total: number; files: ChangeFile[]
 }
 interface StashEntry { ref: string; message: string }
-interface WorktreeInfo { path: string; branch: string | null; dirty: boolean; current: boolean }
+interface WorktreeInfo {
+  path: string; branch: string | null; headSha7: string; main: boolean
+  changes: Changes; upstream: string | null; ahead: number; behind: number
+  inUse: boolean
+}
 interface PrInfo { number: number; title: string; head: string; url: string }
 interface GitState {
   branch: string; detached: boolean; headSha: string
   upstream: string | null; ahead: number; behind: number
   changes: Changes; stashes: StashEntry[]; worktrees: WorktreeInfo[]; prs: PrInfo[] | null
 }
-interface WorkspaceState { id: string; title: string; path: string; repo: GitState | null; error?: string }
+interface WorkspaceState {
+  id: string; title: string; path: string
+  repo: GitState | null; error?: string
+  /** workdir bash sesi peminta (paling baru dulu). */
+  sessionWorktrees?: string[]
+  /** path worktree → id sesi lain yang sedang mengerjakannya. */
+  otherSessionWorktrees?: Record<string, string[]>
+}
 
 /* ---------- fallback stabil kalau service sessions absen ---------- */
 const EMPTY_LIST: SessionListState = {
@@ -56,6 +67,34 @@ function matchWorkspace(workspaces: WorkspaceState[], cwdPath: string): Workspac
   if (exact) return exact
   const lower = cwdPath.toLowerCase()
   return workspaces.find((w) => w.path.toLowerCase() === lower)
+}
+
+function insideDir(path: string, dir: string): boolean {
+  return path === dir || path.startsWith(dir + '/')
+}
+
+/**
+ * Pilih worktree yang sedang dikerjakan (prioritas):
+ * 1. workdir terbaru riwayat bash sesi tab ini di dalam worktree,
+ * 2. cwd sesi di dalam worktree,
+ * 3. worktree linked yang ada proses hidupnya (dev server dll),
+ * 4. checkout utama.
+ */
+function pickActiveWt(repo: GitState, sessionWts: string[] | undefined, cwd: string | undefined): WorktreeInfo | null {
+  const deepest = [...repo.worktrees].sort((a, b) => b.path.length - a.path.length)
+  if (sessionWts !== undefined) {
+    for (const wd of sessionWts) {
+      const hit = deepest.find((w) => insideDir(wd, w.path))
+      if (hit) return hit
+    }
+  }
+  if (cwd !== undefined) {
+    const hit = deepest.find((w) => insideDir(cwd, w.path))
+    if (hit) return hit
+  }
+  const linkedInUse = deepest.find((w) => !w.main && w.inUse)
+  if (linkedInUse) return linkedInUse
+  return repo.worktrees.find((w) => w.main) ?? null
 }
 
 /* ---------- icons (feather-style inline SVG, warna ikut currentColor) ---------- */
@@ -173,11 +212,14 @@ function GitStateDock(props: { sessions?: ISessions }): React.ReactElement {
   const snap = useSyncExternalStore(list.subscribe, list.getSnapshot)
   const currentId = snap.current
   const currentCwd = currentId === undefined ? undefined : snap.byId?.[currentId]?.cwd
+  const currentIdRef = useRef<string | undefined>(undefined)
+  currentIdRef.current = currentId
 
   const load = useCallback(async (opts?: { spin?: boolean }) => {
     if (opts?.spin) setBusy(true)
     try {
-      const res = await fetch(API, { cache: 'no-store' })
+      const sid = currentIdRef.current
+      const res = await fetch(API + (sid !== undefined ? '?session=' + encodeURIComponent(sid) : ''), { cache: 'no-store' })
       if (!res.ok) throw new Error('HTTP ' + res.status)
       const body = (await res.json()) as { workspaces: WorkspaceState[] }
       setData(body.workspaces)
@@ -189,7 +231,9 @@ function GitStateDock(props: { sessions?: ISessions }): React.ReactElement {
     }
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  // Muat saat mount DAN saat sesi berganti (data deteksi worktree aktif
+  // bergantung pada id sesi tab ini).
+  useEffect(() => { void load() }, [currentId, load])
   useEffect(() => {
     const t = setInterval(() => void load(), POLL_MS)
     return () => clearInterval(t)
@@ -210,8 +254,9 @@ function GitStateDock(props: { sessions?: ISessions }): React.ReactElement {
   const selected = data?.find((w) => w.id === selectedId) ?? data?.[0]
   const repo = selected?.repo ?? null
   const wsError = selected?.error ?? null
-
-  const isClean = repo !== null && repo.changes.total === 0 && repo.stashes.length === 0
+  const activeWt = repo === null ? null : pickActiveWt(repo, selected?.sessionWorktrees, currentCwd)
+  const changes = repo === null ? null : (activeWt !== null ? activeWt.changes : repo.changes)
+  const isClean = repo !== null && changes !== null && changes.total === 0 && repo.stashes.length === 0
     && repo.prs !== null && repo.prs.length === 0 && repo.worktrees.length <= 1
 
   /* ---------- strip ---------- */
@@ -225,24 +270,36 @@ function GitStateDock(props: { sessions?: ISessions }): React.ReactElement {
   } else if (repo === null) {
     chips.push(<span key="norepo" className="dshgs-chip muted" title={wsError ?? 'Direktori ini bukan repository git'}><GitIcon color="inherit" /> bukan repo git</span>)
   } else {
-    const branchLabel = repo.detached ? '(detached) ' + repo.headSha : (repo.branch || repo.headSha || '?')
+    // Strip ikut CHECKOUT AKTIF: branch/sync/perubahan dari worktree yang
+    // sedang dikerjakan (bukan checkout utama) - pelajaran worktree 18 Aug 2026.
+    const wt = activeWt
+    const branchLabel = wt !== null
+      ? (wt.branch !== null ? wt.branch : '(detached) ' + (wt.headSha7 || repo.headSha))
+      : (repo.detached ? '(detached) ' + repo.headSha : (repo.branch || repo.headSha || '?'))
+    const syncUp = wt !== null ? wt.upstream : repo.upstream
+    const syncAhead = wt !== null ? wt.ahead : repo.ahead
+    const syncBehind = wt !== null ? wt.behind : repo.behind
+    const ch = changes!
     chips.push(<span key="branch" className="dshgs-chip"><BranchIcon color="inherit" /><b>{branchLabel}</b></span>)
-    if (repo.ahead > 0 || repo.behind > 0) {
+    if (syncAhead > 0 || syncBehind > 0) {
       chips.push(
-        <span key="sync" className={'dshgs-chip' + (repo.behind > 0 ? ' warn' : '')}>
-          {repo.ahead > 0 && <><UpIcon color="inherit" /><b>{repo.ahead}</b></>}
-          {repo.behind > 0 && <><DownIcon color="inherit" /><b>{repo.behind}</b></>}
+        <span key="sync" className={'dshgs-chip' + (syncBehind > 0 ? ' warn' : '')}>
+          {syncAhead > 0 && <><UpIcon color="inherit" /><b>{syncAhead}</b></>}
+          {syncBehind > 0 && <><DownIcon color="inherit" /><b>{syncBehind}</b></>}
         </span>,
       )
     }
-    if (repo.changes.total > 0) {
-      chips.push(<span key="changes" className="dshgs-chip warn"><DiffIcon color="inherit" /><b>{repo.changes.total}</b> berubah</span>)
+    if (ch.total > 0) {
+      chips.push(<span key="changes" className="dshgs-chip warn"><DiffIcon color="inherit" /><b>{ch.total}</b> berubah</span>)
     }
     if (repo.stashes.length > 0) {
       chips.push(<span key="stash" className="dshgs-chip"><StashIcon color="inherit" /><b>{repo.stashes.length}</b> stash</span>)
     }
     if (repo.worktrees.length > 1) {
       chips.push(<span key="wt" className="dshgs-chip"><WtIcon color="inherit" /><b>{repo.worktrees.length}</b> worktree</span>)
+    }
+    if (wt !== null && !wt.main) {
+      chips.push(<span key="inwt" className="dshgs-chip" title={wt.path}><WtIcon color="inherit" /> di worktree</span>)
     }
     if (repo.prs !== null && repo.prs.length > 0) {
       chips.push(<span key="pr" className="dshgs-chip"><PrIcon color="inherit" /><b>{repo.prs.length}</b> PR open</span>)
@@ -261,11 +318,12 @@ function GitStateDock(props: { sessions?: ISessions }): React.ReactElement {
   } else if (repo === null) {
     panelBody = <div className="dshgs-sec"><div className="dshgs-note">{wsError ?? 'Direktori ini bukan repository git (tanpa .git).'}</div></div>
   } else if (isClean) {
-    panelBody = <div className="dshgs-sec"><div className="dshgs-note"><CheckIcon color="inherit" /> Bersih — tidak ada perubahan, stash, PR open, atau worktree lain.</div></div>
+    panelBody = <div className="dshgs-sec"><div className="dshgs-note"><CheckIcon color="inherit" /> Bersih - tidak ada perubahan, stash, PR open, atau worktree lain.</div></div>
   } else {
-    const fileRows = repo.changes.files.length === 0
+    const ch = changes!
+    const fileRows = ch.files.length === 0
       ? <div className="dshgs-note">Tidak ada file berubah.</div>
-      : repo.changes.files.map((f) => {
+      : ch.files.map((f) => {
         const untracked = f.code === '??'
         const conflicted = 'AUD'.includes(f.code[0] ?? '') && 'AUD'.includes(f.code[1] ?? '')
         const cls = 'dshgs-code' + (untracked ? ' untracked' : conflicted ? ' conflict' : '')
@@ -284,14 +342,24 @@ function GitStateDock(props: { sessions?: ISessions }): React.ReactElement {
           <span className="dshgs-meta">{s.message}</span>
         </div>
       ))
-    const wtRows = repo.worktrees.map((w) => (
-      <div key={w.path} className="dshgs-row" title={w.path}>
-        <span className={'dshgs-dirty' + (w.dirty ? '' : ' clean')} title={w.dirty ? 'ada perubahan' : 'bersih'} />
-        <span className="dshgs-path">{w.path}</span>
-        {w.branch !== null && <span className="dshgs-tag">{w.branch}</span>}
-        {w.current && <span className="dshgs-tag cur">aktif</span>}
-      </div>
-    ))
+    const wtRows = repo.worktrees.map((w) => {
+      const isActive = activeWt !== null && w.path === activeWt.path
+      const otherUsers = selected?.otherSessionWorktrees?.[w.path]
+      return (
+        <div key={w.path} className="dshgs-row" title={w.path}>
+          <span className={'dshgs-dirty' + (w.changes.total > 0 ? '' : ' clean')} title={w.changes.total > 0 ? 'ada perubahan' : 'bersih'} />
+          <span className="dshgs-path">{w.path}</span>
+          {w.branch !== null && <span className="dshgs-tag">{w.branch}</span>}
+          {w.main && <span className="dshgs-tag">utama</span>}
+          {isActive && <span className="dshgs-tag cur">aktif</span>}
+          {!w.main && w.inUse && <span className="dshgs-tag">dipakai</span>}
+          {otherUsers !== undefined && otherUsers.length > 0 && (
+            <span className="dshgs-tag" title={'sesi: ' + otherUsers.join(', ')}>dikerjakan sesi lain</span>
+          )}
+          {w.changes.total > 0 && <span className="dshgs-meta">{w.changes.total} berubah</span>}
+        </div>
+      )
+    })
     const prRows = repo.prs === null || repo.prs.length === 0
       ? <div className="dshgs-note">{repo.prs === null ? 'gh tidak tersedia / gagal auth.' : 'Tidak ada PR open.'}</div>
       : repo.prs.map((p) => (
@@ -304,7 +372,7 @@ function GitStateDock(props: { sessions?: ISessions }): React.ReactElement {
     panelBody = (
       <>
         <div className="dshgs-sec">
-          <div className="dshgs-sec-title"><DiffIcon color="inherit" /> Perubahan <span className="dshgs-count">{repo.changes.total}</span></div>
+          <div className="dshgs-sec-title"><DiffIcon color="inherit" /> Perubahan <span className="dshgs-count">{ch.total}</span></div>
           {fileRows}
         </div>
         <div className="dshgs-sec">
@@ -331,9 +399,12 @@ function GitStateDock(props: { sessions?: ISessions }): React.ReactElement {
     )
   })
 
-  const syncMeta = repo === null ? '' : (
-    (repo.upstream !== null ? repo.upstream + ' · ' : '') + '↑' + repo.ahead + ' ↓' + repo.behind
-  )
+  const syncMeta = repo === null ? '' : (() => {
+    const up = activeWt !== null ? activeWt.upstream : repo.upstream
+    const a = activeWt !== null ? activeWt.ahead : repo.ahead
+    const b = activeWt !== null ? activeWt.behind : repo.behind
+    return (up !== null ? up + ' · ' : '') + '↑' + a + ' ↓' + b
+  })()
 
   return (
     <div className="dshgs-root">
