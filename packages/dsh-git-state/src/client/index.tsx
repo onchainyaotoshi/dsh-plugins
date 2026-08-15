@@ -85,6 +85,8 @@ const AlertIcon = ({ color }: { color?: string }) => <Icon color={color}><circle
 
 /* ---------- stylesheet scoped (hover/focus tidak bisa inline style) ---------- */
 const PANEL_CSS = `
+.dshgs-root{box-sizing:border-box;width:calc(100% - 2 * var(--dsh-composer-side-clearance, 16px));
+  max-width:var(--dsh-composer-card-max-width, 780px);margin:0 auto}
 .dshgs-strip{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:34px;padding:4px 6px;
   border:1px solid var(--dsw-alias-border-l2);border-radius:8px;
   background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);
