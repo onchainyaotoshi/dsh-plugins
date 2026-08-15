@@ -25,7 +25,8 @@
     "lib/index.js",
     "lib/client.js",
     "lib/index.d.ts",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "CLAUDE.md"
   ],
   "scripts": {
     "build": "tsdown",
