@@ -1,0 +1,43 @@
+# dsh-git-state
+
+Plugin [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) untuk
+Web UI: strip status git satu baris di atas composer — branch, ahead/behind,
+perubahan uncommitted, stash, worktree, dan PR open — untuk setiap workspace
+terdaftar. Klik strip untuk melihat detail.
+
+## Fitur
+
+- Strip ringkas (slot `conversation.input.dock`, baris paling atas) — chip
+  bernilai nol disembunyikan; bersih ditandai "bersih"; bukan repo git ditandai
+  redup.
+- Panel detail: file berubah (kode XY porcelain), daftar stash, daftar worktree
+  (titik peringatan = ada perubahan, tag "aktif"), daftar PR open (link ke
+  GitHub).
+- Auto-select workspace mengikuti sesi aktif (cwd canonical); override manual
+  lewat tab workspace bertahan sampai sesi berganti.
+- Auto-refresh 30 detik + tombol refresh manual.
+- Semua perintah git **read-only**, dibatasi ke workspace terdaftar.
+
+## Instalasi
+
+```sh
+dsh plugin --profile web add dsh-git-state
+```
+
+lalu restart dsh sekali. Instalasi lokal dari checkout monorepo (sebelum
+publish): `dsh plugin --profile web add ./packages/dsh-git-state`.
+
+## Keamanan
+
+Host half hanya menjalankan perintah read-only (`status --porcelain`,
+`rev-parse`, `stash list`, `worktree list`, `gh pr list`) dengan `git -C
+<path>` — path selalu dari `workspaceRegistry`, client hanya mengirim id
+workspace. Route ini tidak ikut pagar `/api` (method PRIVILEGED), jadi pastikan
+UI ini tetap di balik autentikasi deployment (mis. Cloudflare Access).
+
+## Keterbatasan
+
+- PR open butuh `gh` CLI terautentikasi di host; tanpa itu chip PR
+  disembunyikan (graceful).
+- Strip scope sesi — tidak muncul di layar hero (tanpa sesi aktif).
+- Worktree non-utama dicek dirty-nya (cap 20); daftar file di-cap 200.

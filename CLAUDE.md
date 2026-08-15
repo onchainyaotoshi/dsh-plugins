@@ -38,6 +38,10 @@ packages/
     src/index.ts          # host half: marker + pemeriksa urutan komposisi
     src/client/index.ts   # browser half: flip isLoopback sebelum settings bind
     cordis.patch.yml      # layer: - insert: [{ id: tunnel-loopback, name: dsh-tunnel-loopback }]
+  dsh-git-state/          # strip status git (branch/perubahan/stash/worktree/PR) di atas composer
+    src/index.ts          # host half (Node): route HTTP GET /plugins/dsh-git-state/api/state (git read-only)
+    src/client/index.tsx  # browser half: slot conversation.input.dock (order -10, klik = panel detail)
+    cordis.patch.yml      # layer: - insert: [{ id: git-state, name: dsh-git-state }]
 ```
 
 Detail per plugin: `packages/file-explorer/CLAUDE.md` dan

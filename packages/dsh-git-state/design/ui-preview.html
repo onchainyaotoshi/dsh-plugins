@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="id" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dsh-git-state — UI Preview</title>
+<style>
+/* ============================================================
+   dsh-git-state — mockup UI (bukan plugin asli).
+   Token CSS di sini meniru penamaan --dsw-* milik DSH supaya
+   hasil akhir plugin konsisten dengan shell.
+   ============================================================ */
+:root[data-theme="light"] {
+  --bg-base: #ffffff;
+  --bg-layer-1: #f6f6f7;
+  --bg-layer-2: #ededef;
+  --border-l1: #e5e6e8;
+  --border-l2: #d6d8db;
+  --label-primary: #1f2329;
+  --label-secondary: #5b6169;
+  --label-tertiary: #8a919c;
+  --interactive-hover: rgba(0,0,0,.05);
+  --accent: #2563eb;
+  --ok: #16a34a;
+  --warn: #d97706;
+  --err: #dc2626;
+  --code-bg: #f0f1f3;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 12px rgba(0,0,0,.08);
+}
+:root[data-theme="dark"] {
+  --bg-base: #17181a;
+  --bg-layer-1: #1f2124;
+  --bg-layer-2: #26282c;
+  --border-l1: #2a2d31;
+  --border-l2: #35383d;
+  --label-primary: #e7e9ec;
+  --label-secondary: #a8adb5;
+  --label-tertiary: #7c828b;
+  --interactive-hover: rgba(255,255,255,.07);
+  --accent: #5b9bff;
+  --ok: #3ddc84;
+  --warn: #f0a020;
+  --err: #ff6b6b;
+  --code-bg: #232529;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg-base);
+  color: var(--label-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px; line-height: 1.5;
+  height: 100vh; overflow: hidden;
+}
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+
+/* ---------- page bar ---------- */
+.pagebar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  height: 44px; padding: 0 16px;
+  background: var(--bg-layer-1); border-bottom: 1px solid var(--border-l2);
+  font-size: 13px; color: var(--label-secondary);
+}
+.pagebar .title { font-weight: 600; color: var(--label-primary); }
+.pagebar .hint { font-size: 12px; color: var(--label-tertiary); }
+.theme-btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  border: 1px solid var(--border-l2); border-radius: 8px; color: var(--label-secondary);
+}
+.theme-btn:hover { background: var(--interactive-hover); }
+
+/* ---------- shell mock (sidebar + chat + composer) ---------- */
+.shell {
+  display: grid; grid-template-columns: 248px 1fr;
+  height: calc(100vh - 44px); margin-top: 44px;
+}
+.sidebar {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 12px 8px; border-right: 1px solid var(--border-l2);
+  background: var(--bg-layer-1); overflow-y: auto;
+}
+.sidebar .s-label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--label-tertiary); padding: 4px 8px 8px; }
+.sess { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 8px; color: var(--label-secondary); cursor: default; }
+.sess:hover { background: var(--interactive-hover); }
+.sess.active { background: var(--interactive-hover); color: var(--label-primary); }
+.sess .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--label-tertiary); flex: none; }
+.sess .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.chat { display: flex; flex-direction: column; min-width: 0; }
+.chat-head {
+  display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px;
+  border-bottom: 1px solid var(--border-l2);
+}
+.chat-head .t { font-weight: 600; font-size: 13px; }
+.chat-head .chip { font-size: 11px; color: var(--label-tertiary); border: 1px solid var(--border-l1); border-radius: 999px; padding: 2px 8px; }
+.chat-head .spacer { flex: 1; }
+.ghost-btn { width: 28px; height: 28px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--label-tertiary); }
+.ghost-btn:hover { background: var(--interactive-hover); }
+
+.chat-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 14px; }
+.bubble { max-width: 72%; padding: 10px 14px; border-radius: 12px; font-size: 13px; }
+.bubble.user { align-self: flex-end; background: var(--accent); color: #fff; }
+.bubble.ai { align-self: flex-start; background: var(--bg-layer-1); border: 1px solid var(--border-l1); color: var(--label-primary); }
+
+/* ---------- zona bawah: dock strip + composer ---------- */
+.dock-zone { padding: 0 16px 8px; display: flex; flex-direction: column; gap: 8px; }
+.zone-label { font-size: 11px; color: var(--label-tertiary); letter-spacing: .04em; }
+
+/* strip satu baris (collapsed) */
+.strip {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  min-height: 36px; padding: 5px 8px;
+  border: 1px solid var(--border-l2); border-radius: 8px;
+  background: var(--bg-layer-1);
+}
+.strip .chip {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px;
+  border-radius: 999px; font-size: 12px; color: var(--label-secondary);
+  background: transparent; border: 1px solid transparent;
+}
+.strip .chip:hover { background: var(--interactive-hover); border-color: var(--border-l1); }
+.strip .chip b { font-weight: 600; color: var(--label-primary); }
+.strip .chip .icon { width: 14px; height: 14px; }
+.strip .chip.warn { color: var(--warn); }
+.strip .chip.ok { color: var(--ok); }
+.strip .chip.muted { color: var(--label-tertiary); }
+.strip .sep { width: 1px; height: 16px; background: var(--border-l1); }
+.strip .spacer { flex: 1; }
+.strip .iconbtn {
+  width: 24px; height: 24px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--label-tertiary);
+}
+.strip .iconbtn:hover { background: var(--interactive-hover); color: var(--label-secondary); }
+.strip .iconbtn.spinning svg { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* panel ekspansi */
+.panel {
+  display: none;
+  border: 1px solid var(--border-l2); border-radius: 8px;
+  background: var(--bg-layer-1); box-shadow: var(--shadow);
+  max-height: 420px; overflow-y: auto;
+}
+.strip.open + .panel, .panel.open { display: block; }
+
+.panel-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 12px; border-bottom: 1px solid var(--border-l1);
+  position: sticky; top: 0; background: var(--bg-layer-1); z-index: 2;
+}
+.panel-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; }
+.panel-head .spacer { flex: 1; }
+.ws-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.ws-tab {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px;
+  border: 1px solid var(--border-l1); border-radius: 999px; font-size: 12px; color: var(--label-secondary);
+}
+.ws-tab:hover { background: var(--interactive-hover); }
+.ws-tab.active { border-color: var(--accent); color: var(--label-primary); background: var(--interactive-hover); }
+.ws-tab .badge { font-size: 10px; background: var(--warn); color: #fff; border-radius: 999px; padding: 0 5px; line-height: 14px; }
+
+.panel-body { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr); gap: 0; }
+.sec { padding: 10px 12px; border-bottom: 1px solid var(--border-l1); }
+.sec:last-child { border-bottom: none; }
+.sec + .sec { border-left: 1px solid var(--border-l1); }
+.sec-title { display: flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--label-tertiary); padding-bottom: 6px; }
+.sec-title .count { font-size: 10px; background: var(--bg-layer-2); border-radius: 999px; padding: 0 6px; color: var(--label-secondary); }
+
+.row { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 2px 6px; border-radius: 6px; font-size: 12.5px; }
+.row:hover { background: var(--interactive-hover); }
+.row .code { flex: none; width: 20px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; border-radius: 4px; padding: 1px 0; }
+.code.M, .code.A, .code.R { background: rgba(37, 99, 235, .15); color: var(--accent); }
+.code.M { color: var(--accent); }
+.code.A { color: var(--ok); }
+.code.U { background: rgba(220, 38, 38, .15); color: var(--err); }
+.code.\? { color: var(--label-tertiary); }
+.row .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; color: var(--label-primary); }
+.row .meta { flex: none; font-size: 11px; color: var(--label-tertiary); }
+.row .tag { flex: none; font-size: 10px; border: 1px solid var(--border-l1); border-radius: 999px; padding: 0 6px; color: var(--label-secondary); }
+.row .tag.cur { border-color: var(--accent); color: var(--accent); }
+.dirty-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+.dirty-dot.clean { background: var(--ok); opacity: .5; }
+a.pr-link { color: var(--label-primary); text-decoration: none; }
+a.pr-link:hover { text-decoration: underline; }
+.note { padding: 8px 6px 2px; font-size: 12px; color: var(--label-tertiary); }
+
+/* composer mock */
+.composer-zone { padding: 0 16px 12px; }
+.composer {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border-l2); border-radius: 12px;
+  background: var(--bg-layer-1); padding: 10px 12px;
+}
+.composer .fake-input { flex: 1; color: var(--label-tertiary); font-size: 13px; padding: 4px 2px; }
+.composer .send {
+  width: 32px; height: 32px; border-radius: 8px; background: var(--accent); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.composer .send svg { width: 15px; height: 15px; }
+.stats-line { display: flex; gap: 10px; padding: 6px 4px 0; font-size: 11px; color: var(--label-tertiary); }
+
+/* ikon */
+.icon { display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.icon svg { display: block; }
+</style>
+</head>
+<body>
+
+<div class="pagebar">
+  <span class="title">dsh-git-state — UI Preview (mockup)</span>
+  <span class="hint">Klik strip untuk expand/collapse · ganti workspace via tab · semua data fiktif</span>
+  <button class="theme-btn" id="themeBtn">Tema: <span id="themeName">Gelap</span></button>
+</div>
+
+<div class="shell">
+  <!-- ===== sidebar mock (bukan bagian plugin) ===== -->
+  <aside class="sidebar">
+    <div class="s-label">Sessions — api-service</div>
+    <div class="sess active"><span class="dot"></span><span class="txt">Fix retry loop di worker</span></div>
+    <div class="sess"><span class="dot"></span><span class="txt">Rancang endpoint v2</span></div>
+    <div class="sess"><span class="dot"></span><span class="txt">Debug timeout koneksi</span></div>
+    <div class="s-label" style="margin-top:10px">Sessions — website</div>
+    <div class="sess"><span class="dot"></span><span class="txt">Perbaiki navbar mobile</span></div>
+  </aside>
+
+  <!-- ===== kolom chat ===== -->
+  <main class="chat">
+    <div class="chat-head">
+      <span class="t">Fix retry loop di worker</span>
+      <span class="chip">api-service</span>
+      <span class="spacer"></span>
+      <button class="ghost-btn" title="Session log">&#128196;</button>
+    </div>
+
+    <div class="chat-scroll">
+      <div class="bubble user">Cek kenapa worker nge-loop pas retry setelah deploy kemarin.</div>
+      <div class="bubble ai">Oke, saya telusuri dulu. Kemungkinan besar di bagian backoff-nya — timeout 0 bikin retry langsung loncat tanpa jeda.</div>
+      <div class="bubble user">Sip, sekalian commit-an kemarin udah ke-push belum ya?</div>
+      <div class="bubble ai">Belum. Ada 3 file berubah belum di-commit, 1 stash, dan 2 PR masih open. Rinciannya bisa dilihat di strip git di bawah ini.</div>
+    </div>
+
+    <div class="dock-zone">
+      <div class="zone-label">conversation.input.dock — entry plugin: id "git-state", order −10 (baris paling atas)</div>
+      <!-- strip akan dirender JS -->
+      <div class="strip" id="strip"></div>
+      <div class="panel" id="panel"></div>
+    </div>
+
+    <div class="composer-zone">
+      <div class="composer">
+        <span class="fake-input">Ketik perintah atau pertanyaan…</span>
+        <button class="send" title="Kirim (mock)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+      <div class="stats-line"><span>conversation.composer.dock — garis stats bawaan (BUKAN tempat plugin ini)</span></div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ================= data fiktif ================= */
+const ICONS = {
+  branch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>',
+  up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>',
+  diff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  stash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>',
+  wt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>',
+  pr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+  chevD: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
+  chevU: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>',
+  git: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="6" r="3"/><line x1="6" y1="9" x2="6" y2="15"/><line x1="18" y1="9" x2="9" y2="9"/></svg>',
+};
+function ic(name, size) {
+  return '<span class="icon" style="width:' + size + 'px;height:' + size + 'px">' + ICONS[name] + '</span>';
+}
+
+const DATA = {
+  'api-service': {
+    title: 'api-service', kind: 'git',
+    branch: 'main', ahead: 1, behind: 0,
+    changes: { staged: 1, unstaged: 1, untracked: 1, total: 3,
+      files: [
+        { code: 'M ', path: 'src/index.ts', meta: 'staged' },
+        { code: ' M', path: 'docs/readme.md', meta: '' },
+        { code: '??', path: 'notes-todo.txt', meta: '' },
+      ] },
+    stashes: [
+      { ref: 'stash@{0}', msg: 'WIP: ganti backoff ke exponential' },
+    ],
+    worktrees: [
+      { path: '~/api-service', branch: 'main', dirty: false, current: true },
+      { path: '~/wt/api-service-feat-x', branch: 'feat/x', dirty: true, current: false },
+      { path: '~/wt/api-service-fix-y', branch: 'fix/y', dirty: false, current: false },
+    ],
+    prs: [
+      { number: 128, title: 'feat: endpoint v2 + versi API', head: 'feat/x' },
+      { number: 131, title: 'fix: jeda retry di worker', head: 'fix/y' },
+    ],
+  },
+  'website': {
+    title: 'website', kind: 'non-git',
+  },
+  'lib-utils': {
+    title: 'lib-utils', kind: 'git',
+    branch: 'master', ahead: 0, behind: 0,
+    changes: { staged: 0, unstaged: 0, untracked: 0, total: 0, files: [] },
+    stashes: [],
+    worktrees: [ { path: '~/lib-utils', branch: 'master', dirty: false, current: true } ],
+    prs: [],
+  },
+};
+const WS_ORDER = ['api-service', 'website', 'lib-utils'];
+
+const state = { ws: 'api-service', open: false, refreshing: false };
+const stripEl = document.getElementById('strip');
+const panelEl = document.getElementById('panel');
+
+/* ================= render ================= */
+function chip(html, cls) {
+  return '<span class="chip ' + (cls || '') + '">' + html + '</span>';
+}
+
+function renderStrip() {
+  const d = DATA[state.ws];
+  let html = '';
+  if (d.kind === 'non-git') {
+    html += chip(ic('git', 14) + 'bukan repo git', 'muted');
+  } else {
+    html += chip(ic('branch', 14) + '<b>' + d.branch + '</b>');
+    if (d.ahead > 0 || d.behind > 0) {
+      let parts = '';
+      if (d.ahead > 0) parts += ic('up', 14) + '<b>' + d.ahead + '</b>';
+      if (d.behind > 0) parts += ic('down', 14) + '<b>' + d.behind + '</b>';
+      html += chip(parts, d.behind > 0 ? 'warn' : '');
+    }
+    if (d.changes.total > 0) {
+      html += chip(ic('diff', 14) + '<b>' + d.changes.total + '</b> berubah', 'warn');
+    }
+    if (d.stashes.length > 0) {
+      html += chip(ic('stash', 14) + '<b>' + d.stashes.length + '</b> stash', '');
+    }
+    if (d.worktrees.length > 1) {
+      html += chip(ic('wt', 14) + '<b>' + d.worktrees.length + '</b> worktree', '');
+    }
+    if (d.prs.length > 0) {
+      html += chip(ic('pr', 14) + '<b>' + d.prs.length + '</b> PR open', '');
+    }
+    if (d.changes.total === 0 && d.stashes.length === 0 && d.prs.length === 0) {
+      html += chip(ic('check', 14) + 'bersih', 'ok');
+    }
+  }
+  html += '<span class="spacer"></span>';
+  html += '<button class="iconbtn' + (state.refreshing ? ' spinning' : '') + '" id="refreshBtn" title="Refresh">' + ic('refresh', 14) + '</button>';
+  html += '<button class="iconbtn" id="toggleBtn" title="Expand/collapse">' + (state.open ? ic('chevD', 14) : ic('chevU', 14)) + '</button>';
+  stripEl.innerHTML = html;
+  document.getElementById('refreshBtn').onclick = function () {
+    state.refreshing = true; renderStrip();
+    setTimeout(function () { state.refreshing = false; renderStrip(); }, 700);
+  };
+  document.getElementById('toggleBtn').onclick = function () { state.open = !state.open; renderStrip(); renderPanel(); };
+}
+
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+function renderPanel() {
+  if (!state.open) { panelEl.classList.remove('open'); panelEl.innerHTML = ''; return; }
+  panelEl.classList.add('open');
+  const d = DATA[state.ws];
+
+  let tabs = WS_ORDER.map(function (id) {
+    const w = DATA[id];
+    let badge = '';
+    if (w.kind === 'git' && w.changes.total > 0) badge = '<span class="badge">' + w.changes.total + '</span>';
+    return '<button class="ws-tab' + (id === state.ws ? ' active' : '') + '" data-ws="' + id + '">' + esc(w.title) + badge + '</button>';
+  }).join('');
+
+  let body;
+  if (d.kind === 'non-git') {
+    body = '<div class="sec" style="grid-column:1/-1;border:none"><div class="note">Direktori ini bukan repository git (atau tanpa file .git). Tidak ada yang perlu dipantau.</div></div>';
+  } else if (d.changes.total === 0 && d.stashes.length === 0 && d.prs.length === 0 && d.worktrees.length <= 1) {
+    body = '<div class="sec" style="grid-column:1/-1;border:none"><div class="note">' + ic('check', 13) + ' Bersih — tidak ada perubahan, stash, PR open, atau worktree lain.</div></div>';
+  } else {
+    const files = d.changes.files.map(function (f) {
+      const code = f.code.trim() || ' ';
+      let cls = 'M'; if (code === '??') cls = '?'; if (code === 'A') cls = 'A';
+      return '<div class="row"><span class="code ' + cls + '">' + esc(f.code) + '</span><span class="path">' + esc(f.path) + '</span><span class="meta">' + esc(f.meta) + '</span></div>';
+    }).join('') || '<div class="note">Tidak ada file berubah.</div>';
+    const stashes = d.stashes.map(function (s) {
+      return '<div class="row"><span class="path" style="color:var(--label-secondary)">' + esc(s.ref) + '</span><span class="meta">' + esc(s.msg) + '</span></div>';
+    }).join('') || '<div class="note">Tidak ada stash.</div>';
+    const wts = d.worktrees.map(function (w) {
+      return '<div class="row"><span class="dirty-dot ' + (w.dirty ? '' : 'clean') + '"></span><span class="path">' + esc(w.path) + '</span><span class="tag">' + esc(w.branch) + '</span>' + (w.current ? '<span class="tag cur">aktif</span>' : '') + '</div>';
+    }).join('');
+    const prs = d.prs.map(function (p) {
+      return '<div class="row"><span class="tag">#' + p.number + '</span><a class="pr-link path" href="#">' + esc(p.title) + '</a><span class="meta">' + esc(p.head) + '</span></div>';
+    }).join('') || '<div class="note">Tidak ada PR open.</div>';
+
+    body =
+      '<div class="sec"><div class="sec-title">' + ic('diff', 13) + 'Perubahan <span class="count">' + d.changes.total + '</span></div>' + files + '</div>' +
+      '<div class="sec"><div class="sec-title">' + ic('stash', 13) + 'Stash <span class="count">' + d.stashes.length + '</span></div>' + stashes +
+      '<div class="sec-title" style="margin-top:10px">' + ic('wt', 13) + 'Worktree <span class="count">' + d.worktrees.length + '</span></div>' + wts +
+      '<div class="sec-title" style="margin-top:10px">' + ic('pr', 13) + 'PR open <span class="count">' + d.prs.length + '</span></div>' + prs + '</div>';
+  }
+
+  panelEl.innerHTML =
+    '<div class="panel-head"><span class="panel-title">' + ic('git', 15) + ' Git State</span>' +
+    '<span class="ws-tabs">' + tabs + '</span>' +
+    '<span class="spacer"></span>' +
+    '<span class="meta" style="font-size:11px;color:var(--label-tertiary)">auto-refresh 30 dtk · ' + esc(d.kind === 'git' ? 'branch ' + d.branch : '') + '</span></div>' +
+    '<div class="panel-body">' + body + '</div>';
+
+  panelEl.querySelectorAll('.ws-tab').forEach(function (btn) {
+    btn.onclick = function () { state.ws = btn.getAttribute('data-ws'); renderStrip(); renderPanel(); };
+  });
+}
+
+/* ================= tema ================= */
+document.getElementById('themeBtn').onclick = function () {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  document.getElementById('themeName').textContent = next === 'dark' ? 'Gelap' : 'Terang';
+};
+
+renderStrip();
+renderPanel();
+</script>
+</body>
+</html>
