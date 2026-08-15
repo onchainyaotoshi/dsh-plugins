@@ -177,13 +177,22 @@ function FilesFooterAction(props: { wide?: boolean }): React.ReactElement {
 
 /* ---------- registrasi ---------- */
 export function apply(ctx: Context): void {
-  const slots = ctx as unknown as { slots: { register(spec: unknown, component: unknown): void } }
-  slots.slots.register(
+  // WAJIB lewat slots.inject: register langsung di apply bisa race dengan
+  // deklarasi slot oleh ui-layout/ui-sidebar (error: slot is not declared).
+  // Pattern resmi = ctx.slots.inject(slotName, () => ctx.slots.register(...))
+  // — callback dijalankan begitu slot-nya terdeklarasi.
+  const slots = ctx as unknown as {
+    slots: {
+      inject(slotName: string, callback: () => void): void
+      register(spec: unknown, component: unknown): void
+    }
+  }
+  slots.slots.inject('shell.overlay', () => slots.slots.register(
     { name: 'shell.overlay', inject: () => ({}) },
     FileExplorerPanel,
-  )
-  slots.slots.register(
+  ))
+  slots.slots.inject('sidebar.footer.action', () => slots.slots.register(
     { name: 'sidebar.footer.action', inject: () => ({}) },
     FilesFooterAction,
-  )
+  ))
 }

@@ -44,3 +44,8 @@ packages/
   di-upgrade, cek ulang seam-nya dulu.
 - Publish: build dulu, lalu pnpm --filter dsh-file-explorer publish --access public.
   User lain: dsh plugin --profile web add <nama> + restart.
+- **PRIVASI (wajib, pasca-insiden 15 Aug 2026): repo ini PUBLIK.** Jangan pernah
+  menulis nama asli, email pribadi, path absolut /home/..., atau identitas VPS ke
+  file repo ini. Identitas git = noreply (onchainyaotoshi@users.noreply.github.com),
+  sudah diset repo-lokal — jangan diubah ke email pribadi. Sebelum push: audit
+  grep + git log (lihat aturan lengkap di CLAUDE.md workspace utama).
