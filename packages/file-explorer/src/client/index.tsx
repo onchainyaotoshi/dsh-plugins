@@ -1,7 +1,12 @@
 /**
  * dsh-file-explorer — browser half.
  * Dua entry slot:
- *   sidebar.footer.action → tombol buka panel di kaki sidebar
+ *   conversation.session.header.utilities → tombol buka panel di kanan atas
+ *                                            header sesi (di samping tombol
+ *                                            "session log"), order 1 supaya
+ *                                            render setelah occupant default
+ *                                            (order 0). Scope sesi: tombol
+ *                                            tidak muncul di layar hero.
  *   details              → KOLOM KANAN LAYOUT beneran (bukan overlay):
  *                          panel file memakan layout, chat terdorong, lebar
  *                          bisa di-drag (clamp 300–520px, default 360px),
@@ -145,10 +150,11 @@ const PANEL_CSS = `
 .dshfe-viewer-imgwrap{flex:1;min-height:0;overflow:auto;display:flex;align-items:flex-start;
   justify-content:center;padding:12px}
 .dshfe-viewer-img{max-width:100%;height:auto;border-radius:8px}
-.dshfe-footer-btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;
-  border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);
-  cursor:pointer;font:var(--dsw-font-xs-13)}
-.dshfe-footer-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dshfe-toggle-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:4px;
+  width:32px;height:32px;padding:0;border:1px solid var(--dsw-alias-border-l2);border-radius:18px;
+  background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.dshfe-toggle-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}
+.dshfe-toggle-btn:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}
 `
 
 /* ---------- panel (kolom details layout, bukan overlay) ---------- */
@@ -323,13 +329,12 @@ function FileExplorerPanel(props: { sessions?: ISessions; closeDetails?: () => v
   )
 }
 
-/* ---------- tombol di kaki sidebar ---------- */
-function FilesFooterAction(props: { wide?: boolean; openDetails?: () => void }): React.ReactElement {
+/* ---------- tombol di header sesi (kanan atas, di samping session log) ---------- */
+function FilesHeaderAction(props: { openDetails?: () => void }): React.ReactElement {
   return (
-    <button className="dshfe-footer-btn" title="File explorer"
+    <button className="dshfe-toggle-btn" title="File explorer" aria-label="File explorer"
       onClick={() => props.openDetails?.()}>
       <FolderIcon color="inherit" />
-      {props.wide ? <span>Files</span> : null}
     </button>
   )
 }
@@ -377,8 +382,10 @@ export function apply(ctx: Context): void {
     FileExplorerPanel,
   ))
   // Slot ber-kind 'list' WAJIB options.id (identitas entry di ledger list).
-  slots.slots.inject('sidebar.footer.action', () => slots.slots.register(
-    { name: 'sidebar.footer.action', id: 'file-explorer-toggle', inject: () => ({ openDetails: openPanel }) },
-    FilesFooterAction,
+  // order 1: occupant bawaan "session-log-download" pakai order default 0,
+  // render ascending → tombol Files tampil di sebelah KANAN tombol session log.
+  slots.slots.inject('conversation.session.header.utilities', () => slots.slots.register(
+    { name: 'conversation.session.header.utilities', id: 'file-explorer-toggle', order: 1, inject: () => ({ openDetails: openPanel }) },
+    FilesHeaderAction,
   ))
 }

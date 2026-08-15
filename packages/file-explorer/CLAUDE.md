@@ -9,7 +9,7 @@ dipindah ke repo sendiri, file ini ikut).
 
 ```
 src/index.ts          # host half (Node): route HTTP list/read/raw/workspaces
-src/client/index.tsx  # browser half: seat details (kolom kanan) + sidebar.footer.action
+src/client/index.tsx  # browser half: seat details (kolom kanan) + conversation.session.header.utilities
 cordis.patch.yml      # layer: - insert: [{ id: file-explorer, name: dsh-file-explorer }]
 ```
 
@@ -41,6 +41,13 @@ filesystem.
 readText/readBytes), `workspaceRegistry`, `slots`, `layout`
 (openDetails/closeDetails), `sessions.list`. Diverifikasi di dsh 0.1.0-rc.6 —
 kalau dsh di-upgrade, cek ulang seam-nya dulu.
+
+Tombol launcher ditaruh di slot `conversation.session.header.utilities`
+(kind list, scope sesi) dengan `order: 1` — occupant bawaan
+`session-log-download` (tombol "session log" kanan atas) pakai order default
+0 dan render ascending, jadi tombol Files muncul di sebelah kanannya. Scope
+sesi berarti tombol TIDAK muncul di layar hero (tanpa sesi) — diterima
+pemilik saat pindah dari `sidebar.footer.action` (scope root).
 
 ## Lesson learned (jangan diulang)
 
