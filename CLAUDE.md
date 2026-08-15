@@ -29,6 +29,10 @@ packages/
 - Nama paket: dsh-<kata> (unscoped). Nama = id plugin = id modul browser.
 - Build: pnpm install (sekali) → pnpm build (tsdown; preset bersama tsdown.client.ts).
 - Bundle client wajib eksternal semua @deepseek-ai/* (purity gate).
+- Bundle client WAJIB punya shim CJS di banner/footer preset (tsdown.client.ts):
+  `var module = { exports: {} }; var exports = module.exports;` (banner) +
+  `return module.exports;` (footer). Tanpa shim: "exports is not defined" saat
+  materialisasi (kejadian nyata 15 Aug 2026). JANGAN dihapus.
 - Tambah plugin baru: salin packages/file-explorer → ganti nama + isi → otomatis
   masuk workspace (packages/*). Perbarui daftar di bagian "Struktur".
 - Test di VPS: dsh plugin --profile web add ./packages/<nama> → verifikasi

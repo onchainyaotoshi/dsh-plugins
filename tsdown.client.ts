@@ -34,7 +34,9 @@ export function clientBundle(id: string) {
     dts: false,
     clean: false,
     sourcemap: false,
-    banner: { js: 'window.__ModuleLoader__.load({ id: ' + JSON.stringify(id) + ', factory: (require) => {' },
-    footer: { js: '} });' },
+    // Shim CJS WAJIB ada DI BANNER (bukan output bundler): tanpa ini factory
+    // melempar ReferenceError "exports is not defined" saat dimaterialisasi.
+    banner: { js: 'window.__ModuleLoader__.load({ id: ' + JSON.stringify(id) + ', factory: (require) => { var module = { exports: {} }; var exports = module.exports;' },
+    footer: { js: 'return module.exports; } });' },
   })
 }
