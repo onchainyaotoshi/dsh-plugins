@@ -13,21 +13,20 @@
  *
  * Deteksi "worktree aktif" (pelajaran 18 Aug 2026 - `git worktree list`
  * TIDAK menandai checkout yang sedang dipakai; blok pertama SELALU checkout
- * utama):
- *   1. riwayat workdir panggilan bash SESI PEMINTA saja (event
- *      tool/code-dispatch-start → data.arguments.workdir) - sinyal paling
- *      akurat untuk "di mana user kerja", per tab (multi-tab aman);
- *   2. scan direktori /proc (readlink cwd tiap proses) - proses hidup
- *      (dev server dll) di dalam worktree → tag inUse.
- * Tag "dikerjakan sesi lain": client kirim cwd sesi lain (SnapshotStore live)
- * via param `others` — server map ke worktree, TANPA readSession (pelajaran
- * 16 Aug 2026: readSession ×8 per request pernah menjenuhkan event loop dsh,
- * memori ~3G, semua endpoint timeout). Sinyal = "sesi X sedang di worktree Y
- * sekarang" (bukan riwayat bash). Sinyal "dipakai proses hidup" tetap /proc.
+ * utama). Sinyal workdir bash sesi dari DUA sumber:
+ *   1. INDEX live: subscribe stream `session/event` → Map<sessionId,
+ *      workdirs terakhir> (event tool/code-dispatch-start →
+ *      data.arguments.workdir). 0 readSession - semua sesi terpantau
+ *      inkremental, bounded (cap sesi × cap workdir);
+ *   2. BACKFILL 1× sesi peminta: kalau belum punya entri index (history
+ *      sebelum boot), readSession 1× sekali per sesi per boot (dedup
+ *      in-flight + tanda backfilled).
+ * Tag "dikerjakan sesi lain" = index sesi lain (tanpa readSession).
+ * Sinyal proses hidup di worktree tetap dari scan /proc (inUse).
  *
  * Caching: memo TTL 5 dtk + dedup in-flight (per-workspace repo state, scan
- * /proc, riwayat workdir per sesi) supaya poll client (30 dtk) tidak
- * membanjiri git maupun saling tumpang tindih membengkakkan beban.
+ * /proc) supaya poll client (30 dtk) tidak membanjiri git maupun saling
+ * tumpang tindih membengkakkan beban.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -35,7 +34,7 @@ import type { ShellExecRequest } from '@deepseek-ai/dsh-shell'
 import { readdir, readlink } from 'node:fs/promises'
 
 export const name = 'git-state-host'
-export const inject = ['webServer', 'shell', 'workspaceRegistry', 'fs', 'sessions']
+export const inject = ['webServer', 'shell', 'workspaceRegistry', 'sessions']
 
 const API_PREFIX = '/plugins/dsh-git-state/api'
 const CMD_TIMEOUT_MS = 6000
@@ -45,7 +44,6 @@ const MAX_STASHES = 30
 const MAX_WORKTREES = 20
 const MAX_PRS = 20
 const MAX_WORKDIR_HITS = 20
-const MAX_OTHER_SESSIONS = 8
 const MEMO_TTL_MS = 5000
 
 /* ---------- wire types (cocok dengan browser half) ---------- */
@@ -213,7 +211,12 @@ async function procCwds(): Promise<string[]> {
             try { cwds.push(await readlink('/proc/' + n + '/cwd')) } catch { /* proses lenyap */ }
           }),
       )
-    } catch { /* /proc tak tersedia */ }
+    } catch {
+      // Gagal baca /proc: JANGAN memo hasil kosong (bug review #4 - poison 5 dtk).
+      // Kembalikan kosong sekali saja; request berikutnya mencoba lagi.
+      procInflight = null
+      return []
+    }
     procMemo = { at: Date.now(), cwds }
     procInflight = null
     return cwds
@@ -226,35 +229,39 @@ function insideDir(path: string, dir: string): boolean {
   return path === dir || path.startsWith(dir + '/')
 }
 
-/**
- * Parse param `others`: `id|cwd;id|cwd;...` (cwd sesi lain dikirim client dari
- * SnapshotStore live). Dipakai untuk tag "dikerjakan sesi lain" TANPA readSession
- * — cwd datang dari client, bukan scan transkrip host (pelajaran 16 Aug 2026).
- */
-function parseOthers(raw: string | null): Map<string, string> {
-  const out = new Map<string, string>()
-  if (!raw) return out
-  for (const pair of raw.split(';')) {
-    if (out.size >= MAX_OTHER_SESSIONS) break
-    const sep = pair.indexOf('|')
-    if (sep <= 0) continue
-    const id = pair.slice(0, sep)
-    const cwd = pair.slice(sep + 1)
-    if (id && cwd) out.set(id, cwd)
-  }
-  return out
-}
-
-/* ---------- riwayat workdir sesi (log bash) ---------- */
+/* ---------- index workdir sesi (stream live + backfill) ---------- */
 interface SessionQueryLike { readSession?(id: string): Promise<unknown> }
-const workdirMemo = new Map<string, { at: number; workdirs: string[] }>()
+
+/**
+ * Index workdir bash per sesi, diisi INKREMENTAL dari stream live
+ * `session/event` (0 readSession utk sesi lain) + backfill 1× readSession
+ * sesi peminta saat belum punya entri (history sebelum boot). Bounded.
+ */
+const MAX_INDEX_SESSIONS = 64
+const workdirIndex = new Map<string, string[]>()
+const backfilled = new Set<string>()
 const workdirInflight = new Map<string, Promise<string[]>>()
 
-/** Workdir panggilan bash satu sesi, paling baru dulu (leaf field saja). */
+function pushWorkdir(sessionId: string, wd: string): void {
+  if (wd === '') return
+  const list = workdirIndex.get(sessionId)
+  if (list) {
+    workdirIndex.set(sessionId, [wd, ...list.filter((d) => d !== wd)].slice(0, MAX_WORKDIR_HITS))
+  } else {
+    if (workdirIndex.size >= MAX_INDEX_SESSIONS) {
+      const oldest = workdirIndex.keys().next().value
+      if (oldest !== undefined) workdirIndex.delete(oldest)
+    }
+    workdirIndex.set(sessionId, [wd])
+  }
+}
+
+/** Workdir bash satu sesi, paling baru dulu. Index dulu; backfill 1× kalau belum ada entri. */
 async function sessionWorkdirs(ctx: Context, sessionId: string): Promise<string[]> {
   if (sessionId === '') return []
-  const hit = workdirMemo.get(sessionId)
-  if (hit && Date.now() - hit.at < MEMO_TTL_MS) return hit.workdirs
+  const hit = workdirIndex.get(sessionId)
+  if (hit) return hit
+  if (backfilled.has(sessionId)) return []
   const existing = workdirInflight.get(sessionId)
   if (existing) return existing
   const p = (async () => {
@@ -272,7 +279,8 @@ async function sessionWorkdirs(ctx: Context, sessionId: string): Promise<string[
         }
       }
     } catch { /* degradasi halus: tanpa riwayat sesi */ }
-    workdirMemo.set(sessionId, { at: Date.now(), workdirs })
+    backfilled.add(sessionId)
+    if (workdirs.length > 0) workdirIndex.set(sessionId, workdirs)
     workdirInflight.delete(sessionId)
     return workdirs
   })()
@@ -392,7 +400,21 @@ async function repoStateFor(ctx: Context, id: string, title: string, path: strin
 }
 
 /* ---------- registrasi ---------- */
+type SessionEventLike = { type?: string; data?: { arguments?: { workdir?: string } } }
+
 export function apply(ctx: Context): void {
+  // Stream live append sesi → index workdir inkremental (0 readSession utk
+  // sesi lain). Cast: event 'session/event' tidak ikut type graph build
+  // plugin ini; runtime-nya sah (pola sama dengan plugin first-party dsh).
+  const on = ctx.on as (name: string, listener: (session: { id?: unknown }, event: SessionEventLike) => void) => () => boolean
+  on('session/event', (session, event) => {
+    if (event?.type !== 'tool/code-dispatch-start') return
+    const wd = event.data?.arguments?.workdir
+    if (typeof wd !== 'string') return
+    const sid = String(session?.id ?? '')
+    if (sid !== '') pushWorkdir(sid, wd)
+  })
+
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact',
     path: API_PREFIX + '/state',
@@ -400,11 +422,16 @@ export function apply(ctx: Context): void {
       try {
         const url = new URL(req.url ?? '/', 'http://localhost')
         const sessionId = url.searchParams.get('session') ?? ''
-        // cwd sesi lain dikirim client (SnapshotStore live) via param `others` →
-        // tag "dikerjakan sesi lain" tanpa readSession. Sesi peminta tetap pakai
-        // riwayat bash (sessionWorkdirs, 1× readSession) untuk deteksi worktree aktif.
-        const others = parseOthers(url.searchParams.get('others'))
+        // Sesi peminta: index live + backfill 1× (history pra-boot).
         const ownWorkdirs = await sessionWorkdirs(ctx, sessionId)
+        // Sesi lain: cukup dari index — tanpa readSession sama sekali.
+        const otherBySession = new Map<string, string[]>()
+        for (const s of ctx.sessions.list()) {
+          const sid = String(s.id)
+          if (sid === sessionId) continue
+          const wds = workdirIndex.get(sid)
+          if (wds && wds.length > 0) otherBySession.set(sid, wds)
+        }
 
         const workspaces = ctx.workspaceRegistry.list()
         const states = await Promise.all(workspaces.map((w) => repoStateFor(ctx, String(w.id), w.title, w.path)))
@@ -415,8 +442,8 @@ export function apply(ctx: Context): void {
           const other: Record<string, string[]> = {}
           for (const w of st.repo.worktrees) {
             const users: string[] = []
-            for (const [sid, cwd] of others) {
-              if (insideDir(cwd, w.path)) users.push(sid)
+            for (const [sid, wds] of otherBySession) {
+              if (wds.some((d) => insideDir(d, w.path))) users.push(sid)
             }
             if (users.length > 0) other[w.path] = users
           }

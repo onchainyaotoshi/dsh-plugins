@@ -44,21 +44,22 @@ cordis.patch.yml      # layer: - insert: [{ id: git-state, name: dsh-git-state }
 - **Deteksi worktree aktif** (18 Aug 2026): `git worktree list` TIDAK
   menandai checkout yang sedang dipakai — blok pertama SELALU checkout utama
   (dibuktikan: dijalankan dari 5 worktree camis hasilnya sama). Sinyal
-  sebenarnya: (1) riwayat `workdir` panggilan bash sesi — host baca event
-  `tool/code-dispatch-start` → `data.arguments.workdir` via
-  `ctx.get('sessionQuery').readSession(id)` (OPSIONAL, leaf field saja,
-  scan dari ekor cap 20 hit, memo TTL 5 dtk; client kirim `?session=<id>` =
-  id sesi tab itu → multi-tab dengan worktree berbeda aman); (2) scan
-  `/proc` (readlink cwd tiap pid) → `inUse` (proses hidup: dev server dll).
-  Prioritas client: riwayat sesi → cwd sesi → linked `inUse` → utama.
-  Strip menampilkan branch/sync/perubahan checkout AKTIF, bukan root.
-  Tag "dikerjakan sesi lain" via cwd sesi lain yang dikirim CLIENT
-  (SnapshotStore live, `snap.byId[id].cwd`) di param `others`=`id|cwd;...`
-  — server map ke worktree, TANPA readSession (lihat Lesson learned 16 Aug
-  2026). Sinyal = "sesi X sedang di worktree Y sekarang" (current cwd, bukan
-  riwayat bash); sinyal proses hidup tetap dari /proc (`inUse`). Kalau
-  `sessionQuery` absen → degradasi halus (tanpa riwayat sesi peminta), fitur
-  git lain tetap jalan.
+  sebenarnya, dua sumber (16 Aug 2026, desain event-index): (1) INDEX live
+  — subscribe stream `session/event` → `Map<sessionId, workdirs terakhir>`
+  (event `tool/code-dispatch-start` → `data.arguments.workdir`; 0 readSession,
+  semua sesi terpantau inkremental, bounded cap sesi × cap workdir; event lama
+  yang tidak membawa workdir otomatis terlewati); (2) BACKFILL 1× sesi peminta
+  — kalau belum ada entri index (history sebelum boot), `readSession(id)` 1×
+  per sesi per boot (dedup in-flight + tanda backfilled). Client tetap kirim
+  `?session=<id>` = id sesi tab itu → multi-tab aman. Scan `/proc` (async,
+  readlink cwd tiap pid) → `inUse` (proses hidup: dev server dll). Prioritas
+  client: riwayat sesi → cwd sesi → linked `inUse` → utama. Strip menampilkan
+  branch/sync/perubahan checkout AKTIF, bukan root. Tag "dikerjakan sesi lain"
+  = index sesi lain (tanpa readSession): workdir index yang jatuh di dalam
+  sebuah worktree menandai sesi pemakainya. Catatan: log sesi format lama
+  (event dispatch tertanam di `tool/result`) tidak terbaca backfill — degradasi
+  halus (fallback cwd/inUse/main), index live menutup gap ke depan. Kalau
+  `sessionQuery` absen → backfill dilewati, index tetap jalan.
 - **Keamanan (warisan wajib dari file-explorer)**: route tidak ikut pagar
   `/api`; satu-satunya pagar = hanya perintah read-only dengan path dari
   `workspaceRegistry` (client tidak pernah mengirim path). Jangan pernah
@@ -88,9 +89,11 @@ cordis.patch.yml      # layer: - insert: [{ id: git-state, name: dsh-git-state }
   `readlinkSync` /proc) memblok main thread → ganti `node:fs/promises` async;
   (5) `/api/state` bukan method PRIVILEGED, tidak ikut pagar `/api`, jadi
   beban di sini langsung tembus ke host — wajib hemat. (6) Tag "dikerjakan
-  sesi lain" cukup dari cwd sesi lain yang dikirim client (SnapshotStore
-  live, param `others`) — 0 readSession; jangan scan transkrip host utk
-  sinyal ini. Verifikasi: 8 request
+  sesi lain" JANGAN dari cwd client (`SessionSummary.cwd` = stempel SAAT
+  SESI DIBUAT, deep-frozen — selalu menunjuk worktree utama; review
+  membuktikan via dsh-session: header.cwd, tanpa feedback workdir) — solusi
+  benar+murahnya: subscribe stream `session/event` → index workdir in-memory
+  (0 readSession; lihat bagian Arsitektur). Verifikasi: 8 request
   concurrent harus berbagi satu jalan (~40ms), bukan 8× menggantung; bandingkan
   CPU/mem sebelum-sesudah di `systemctl status dsh`.
 - **Komentar blok JANGAN memuat `*/`** (kejadian 18 Aug 2026): docstring

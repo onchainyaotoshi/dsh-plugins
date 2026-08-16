@@ -214,33 +214,12 @@ function GitStateDock(props: { sessions?: ISessions }): React.ReactElement {
   const currentCwd = currentId === undefined ? undefined : snap.byId?.[currentId]?.cwd
   const currentIdRef = useRef<string | undefined>(undefined)
   currentIdRef.current = currentId
-  // Snapshot terbaru (semua sesi) untuk akses stable dari useCallback load:
-  // dipakai mengumpulkan cwd sesi lain → param `others` (tag dikerjakan sesi lain).
-  const snapRef = useRef(snap)
-  snapRef.current = snap
 
   const load = useCallback(async (opts?: { spin?: boolean }) => {
     if (opts?.spin) setBusy(true)
     try {
       const sid = currentIdRef.current
-      // cwd sesi lain (SnapshotStore live) → param `others`: `id|cwd;...`.
-      // Server map ke worktree utk tag "dikerjakan sesi lain" tanpa readSession.
-      const others: string[] = []
-      const byId = snapRef.current?.byId
-      if (byId) {
-        const selfId = sid !== undefined ? String(sid) : ''
-        for (const [id, info] of Object.entries(byId)) {
-          if (id === selfId) continue
-          const cwd = info.cwd
-          if (typeof cwd === 'string' && cwd !== '') others.push(id + '|' + cwd)
-          if (others.length >= 8) break
-        }
-      }
-      const params = new URLSearchParams()
-      if (sid !== undefined) params.set('session', String(sid))
-      if (others.length > 0) params.set('others', others.join(';'))
-      const qs = params.toString()
-      const res = await fetch(API + (qs ? '?' + qs : ''), { cache: 'no-store' })
+      const res = await fetch(API + (sid !== undefined ? '?session=' + encodeURIComponent(sid) : ''), { cache: 'no-store' })
       if (!res.ok) throw new Error('HTTP ' + res.status)
       const body = (await res.json()) as { workspaces: WorkspaceState[] }
       setData(body.workspaces)
