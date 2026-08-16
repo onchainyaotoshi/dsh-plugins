@@ -83,11 +83,11 @@ Detail per plugin: `packages/file-explorer/CLAUDE.md` dan
 - Publish: build dulu, lalu pnpm --filter <paket> publish --access public.
   User lain: dsh plugin --profile web add <nama> + restart.
 - **PRIVASI (wajib, pasca-insiden 15 Aug 2026): repo ini PUBLIK.** Jangan pernah
-  menulis nama asli, email pribadi, path absolut /home/..., atau identitas VPS
+  menulis nama asli, email pribadi, path absolut (di luar repo), atau identitas VPS
   ke file repo ini — termasuk CLAUDE.md per paket. Identitas git = noreply
-  (onchainyaotoshi@users.noreply.github.com), sudah diset repo-lokal — jangan
-  diubah ke email pribadi. Sebelum push: audit grep + git log (lihat aturan
-  lengkap di CLAUDE.md workspace utama).
+  (cek `git config user.email` harus berakhiran @users.noreply.github.com),
+  sudah diset repo-lokal — jangan diubah ke email pribadi. Sebelum push: audit
+  grep + git log (lihat aturan lengkap di CLAUDE.md workspace utama).
 - **Disiplin belajar: SETIAP insiden/error yang makan waktu → tambah baris
   pelajaran SEBELUM commit fix-nya.** Catat di `CLAUDE.md` paket yang
   bersangkutan — lesson learned-nya ikut pindah kalau paket dipisah; ke file
