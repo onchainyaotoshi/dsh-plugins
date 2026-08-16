@@ -14,19 +14,25 @@
  * Deteksi "worktree aktif" (pelajaran 18 Aug 2026 - `git worktree list`
  * TIDAK menandai checkout yang sedang dipakai; blok pertama SELALU checkout
  * utama):
- *   1. riwayat workdir panggilan bash sesi (event tool/code-dispatch-start →
- *      data.arguments.workdir) - sinyal paling akurat untuk "di mana user
- *      kerja", dihitung per sesi (multi-tab aman);
+ *   1. riwayat workdir panggilan bash SESI PEMINTA saja (event
+ *      tool/code-dispatch-start → data.arguments.workdir) - sinyal paling
+ *      akurat untuk "di mana user kerja", per tab (multi-tab aman);
  *   2. scan direktori /proc (readlink cwd tiap proses) - proses hidup
- *      (dev server dll) di dalam worktree.
+ *      (dev server dll) di dalam worktree → tag inUse.
+ * Tag "dikerjakan sesi lain": client kirim cwd sesi lain (SnapshotStore live)
+ * via param `others` — server map ke worktree, TANPA readSession (pelajaran
+ * 16 Aug 2026: readSession ×8 per request pernah menjenuhkan event loop dsh,
+ * memori ~3G, semua endpoint timeout). Sinyal = "sesi X sedang di worktree Y
+ * sekarang" (bukan riwayat bash). Sinyal "dipakai proses hidup" tetap /proc.
  *
- * Caching: memo TTL 5 dtk (per-workspace repo state, scan /proc, riwayat
- * workdir per sesi) supaya poll client (30 dtk) tidak membanjiri git.
+ * Caching: memo TTL 5 dtk + dedup in-flight (per-workspace repo state, scan
+ * /proc, riwayat workdir per sesi) supaya poll client (30 dtk) tidak
+ * membanjiri git maupun saling tumpang tindih membengkakkan beban.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ShellExecRequest } from '@deepseek-ai/dsh-shell'
-import { readdirSync, readlinkSync } from 'node:fs'
+import { readdir, readlink } from 'node:fs/promises'
 
 export const name = 'git-state-host'
 export const inject = ['webServer', 'shell', 'workspaceRegistry', 'fs', 'sessions']
@@ -191,49 +197,87 @@ function parseWorktrees(text: string, mainBranch: string): WorktreeInfo[] {
 
 /* ---------- scan /proc (proses hidup di dalam worktree) ---------- */
 let procMemo: { at: number; cwds: string[] } | null = null
+let procInflight: Promise<string[]> | null = null
 
-function procCwds(): string[] {
+async function procCwds(): Promise<string[]> {
   if (procMemo && Date.now() - procMemo.at < MEMO_TTL_MS) return procMemo.cwds
-  const cwds: string[] = []
-  try {
-    for (const name of readdirSync('/proc')) {
-      if (!/^\d+$/.test(name)) continue
-      try { cwds.push(readlinkSync('/proc/' + name + '/cwd')) } catch { /* proses lenyap */ }
-    }
-  } catch { /* /proc tak tersedia */ }
-  procMemo = { at: Date.now(), cwds }
-  return cwds
+  if (procInflight) return procInflight
+  const p = (async () => {
+    const cwds: string[] = []
+    try {
+      const names = await readdir('/proc')
+      await Promise.all(
+        names
+          .filter((n) => /^\d+$/.test(n))
+          .map(async (n) => {
+            try { cwds.push(await readlink('/proc/' + n + '/cwd')) } catch { /* proses lenyap */ }
+          }),
+      )
+    } catch { /* /proc tak tersedia */ }
+    procMemo = { at: Date.now(), cwds }
+    procInflight = null
+    return cwds
+  })()
+  procInflight = p
+  return p
 }
 
 function insideDir(path: string, dir: string): boolean {
   return path === dir || path.startsWith(dir + '/')
 }
 
+/**
+ * Parse param `others`: `id|cwd;id|cwd;...` (cwd sesi lain dikirim client dari
+ * SnapshotStore live). Dipakai untuk tag "dikerjakan sesi lain" TANPA readSession
+ * — cwd datang dari client, bukan scan transkrip host (pelajaran 16 Aug 2026).
+ */
+function parseOthers(raw: string | null): Map<string, string> {
+  const out = new Map<string, string>()
+  if (!raw) return out
+  for (const pair of raw.split(';')) {
+    if (out.size >= MAX_OTHER_SESSIONS) break
+    const sep = pair.indexOf('|')
+    if (sep <= 0) continue
+    const id = pair.slice(0, sep)
+    const cwd = pair.slice(sep + 1)
+    if (id && cwd) out.set(id, cwd)
+  }
+  return out
+}
+
 /* ---------- riwayat workdir sesi (log bash) ---------- */
 interface SessionQueryLike { readSession?(id: string): Promise<unknown> }
 const workdirMemo = new Map<string, { at: number; workdirs: string[] }>()
+const workdirInflight = new Map<string, Promise<string[]>>()
 
 /** Workdir panggilan bash satu sesi, paling baru dulu (leaf field saja). */
 async function sessionWorkdirs(ctx: Context, sessionId: string): Promise<string[]> {
   if (sessionId === '') return []
   const hit = workdirMemo.get(sessionId)
   if (hit && Date.now() - hit.at < MEMO_TTL_MS) return hit.workdirs
-  let workdirs: string[] = []
-  try {
-    const sq = ctx.get('sessionQuery') as SessionQueryLike | undefined
-    const snap = (await sq?.readSession?.(sessionId)) as { events?: unknown[] } | undefined
-    const events = snap?.events
-    if (Array.isArray(events)) {
-      for (let i = events.length - 1; i >= 0 && workdirs.length < MAX_WORKDIR_HITS; i--) {
-        const e = events[i] as { type?: string; data?: { arguments?: { workdir?: string } } } | null
-        if (e?.type !== 'tool/code-dispatch-start') continue
-        const wd = e.data?.arguments?.workdir
-        if (typeof wd === 'string' && wd !== '' && !workdirs.includes(wd)) workdirs.push(wd)
+  const existing = workdirInflight.get(sessionId)
+  if (existing) return existing
+  const p = (async () => {
+    let workdirs: string[] = []
+    try {
+      const sq = ctx.get('sessionQuery') as SessionQueryLike | undefined
+      const snap = (await sq?.readSession?.(sessionId)) as { events?: unknown[] } | undefined
+      const events = snap?.events
+      if (Array.isArray(events)) {
+        for (let i = events.length - 1; i >= 0 && workdirs.length < MAX_WORKDIR_HITS; i--) {
+          const e = events[i] as { type?: string; data?: { arguments?: { workdir?: string } } } | null
+          if (e?.type !== 'tool/code-dispatch-start') continue
+          const wd = e.data?.arguments?.workdir
+          if (typeof wd === 'string' && wd !== '' && !workdirs.includes(wd)) workdirs.push(wd)
+        }
       }
-    }
-  } catch { /* degradasi halus: tanpa riwayat sesi */ }
-  workdirMemo.set(sessionId, { at: Date.now(), workdirs })
-  return workdirs
+    } catch { /* degradasi halus: tanpa riwayat sesi */ }
+    workdirMemo.set(sessionId, { at: Date.now(), workdirs })
+    workdirInflight.delete(sessionId)
+    return workdirs
+  })()
+  workdirInflight.set(sessionId, p)
+  return p
 }
 
 /* ---------- kolektor per workspace ---------- */
@@ -304,7 +348,7 @@ async function collectRepo(ctx: Context, id: string, title: string, path: string
     )
 
     // Proses hidup (dev server, editor, dll) di dalam worktree.
-    const cwds = procCwds()
+    const cwds = await procCwds()
     for (const w of worktrees) {
       w.inUse = cwds.some((c) => insideDir(c, w.path))
     }
@@ -331,15 +375,20 @@ async function collectRepo(ctx: Context, id: string, title: string, path: string
   }
 }
 
-/* ---------- memo (TTL) ---------- */
+/* ---------- memo (TTL) + dedup in-flight ---------- */
 const memo = new Map<string, { at: number; value: WorkspaceState }>()
+const repoInflight = new Map<string, Promise<WorkspaceState>>()
 
 async function repoStateFor(ctx: Context, id: string, title: string, path: string): Promise<WorkspaceState> {
   const hit = memo.get(path)
   if (hit && Date.now() - hit.at < MEMO_TTL_MS) return hit.value
-  const value = await collectRepo(ctx, id, title, path)
-  memo.set(path, { at: Date.now(), value })
-  return value
+  const existing = repoInflight.get(path)
+  if (existing) return existing
+  const p = collectRepo(ctx, id, title, path)
+    .then((value) => { memo.set(path, { at: Date.now(), value }); repoInflight.delete(path); return value })
+    .catch((err) => { repoInflight.delete(path); throw err })
+  repoInflight.set(path, p)
+  return p
 }
 
 /* ---------- registrasi ---------- */
@@ -351,19 +400,11 @@ export function apply(ctx: Context): void {
       try {
         const url = new URL(req.url ?? '/', 'http://localhost')
         const sessionId = url.searchParams.get('session') ?? ''
-
-        // Riwayat bash sesi peminta (per tab) + sesi lain yang hidup.
+        // cwd sesi lain dikirim client (SnapshotStore live) via param `others` →
+        // tag "dikerjakan sesi lain" tanpa readSession. Sesi peminta tetap pakai
+        // riwayat bash (sessionWorkdirs, 1× readSession) untuk deteksi worktree aktif.
+        const others = parseOthers(url.searchParams.get('others'))
         const ownWorkdirs = await sessionWorkdirs(ctx, sessionId)
-        const otherBySession = new Map<string, string[]>()
-        let scanned = 0
-        for (const s of ctx.sessions.list()) {
-          if (scanned >= MAX_OTHER_SESSIONS) break
-          const sid = String(s.id)
-          if (sid === sessionId) continue
-          scanned++
-          const wds = await sessionWorkdirs(ctx, sid)
-          if (wds.length > 0) otherBySession.set(sid, wds)
-        }
 
         const workspaces = ctx.workspaceRegistry.list()
         const states = await Promise.all(workspaces.map((w) => repoStateFor(ctx, String(w.id), w.title, w.path)))
@@ -374,8 +415,8 @@ export function apply(ctx: Context): void {
           const other: Record<string, string[]> = {}
           for (const w of st.repo.worktrees) {
             const users: string[] = []
-            for (const [sid, wds] of otherBySession) {
-              if (wds.some((d) => insideDir(d, w.path))) users.push(sid)
+            for (const [sid, cwd] of others) {
+              if (insideDir(cwd, w.path)) users.push(sid)
             }
             if (users.length > 0) other[w.path] = users
           }

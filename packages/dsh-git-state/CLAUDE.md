@@ -31,7 +31,8 @@ cordis.patch.yml      # layer: - insert: [{ id: git-state, name: dsh-git-state }
   Y=worktree), `stash list`, `worktree list --porcelain` (blok dipisah baris
   kosong; blok pertama = checkout UTAMA, BUKAN current; baris `branch
   refs/heads/x` / `detached`), `gh pr list --state open --json ...`
-  (best-effort → null). Memo per path workspace TTL 5 dtk. Timeout per
+  (best-effort → null). Memo per path workspace TTL 5 dtk + dedup in-flight
+  (request tumpang tindih berbagi satu jalan, bukan menggandakan). Timeout per
   perintah 6 dtk.
 - **Browser half** (`inject: ['slots','sessions']`): registrasi WAJIB lewat
   `ctx.slots.inject` (anti-race); slot kind list wajib `options.id`
@@ -51,9 +52,13 @@ cordis.patch.yml      # layer: - insert: [{ id: git-state, name: dsh-git-state }
   `/proc` (readlink cwd tiap pid) → `inUse` (proses hidup: dev server dll).
   Prioritas client: riwayat sesi → cwd sesi → linked `inUse` → utama.
   Strip menampilkan branch/sync/perubahan checkout AKTIF, bukan root.
-  Host juga memindai sesi LAIN yang hidup (cap 8) → tag `dikerjakan sesi
-  lain` per worktree. Kalau `sessionQuery` absen → degradasi halus (tanpa
-  riwayat sesi), fitur git lain tetap jalan.
+  Tag "dikerjakan sesi lain" via cwd sesi lain yang dikirim CLIENT
+  (SnapshotStore live, `snap.byId[id].cwd`) di param `others`=`id|cwd;...`
+  — server map ke worktree, TANPA readSession (lihat Lesson learned 16 Aug
+  2026). Sinyal = "sesi X sedang di worktree Y sekarang" (current cwd, bukan
+  riwayat bash); sinyal proses hidup tetap dari /proc (`inUse`). Kalau
+  `sessionQuery` absen → degradasi halus (tanpa riwayat sesi peminta), fitur
+  git lain tetap jalan.
 - **Keamanan (warisan wajib dari file-explorer)**: route tidak ikut pagar
   `/api`; satu-satunya pagar = hanya perintah read-only dengan path dari
   `workspaceRegistry` (client tidak pernah mengirim path). Jangan pernah
@@ -64,6 +69,30 @@ cordis.patch.yml      # layer: - insert: [{ id: git-state, name: dsh-git-state }
 
 ## Lesson learned (jangan diulang)
 
+- **Route plugin yang dipoll TIDAK boleh menjenuhkan event loop dsh**
+  (kejadian 16 Aug 2026, insiden produksi — situs tak kebuka): `/api/state`
+  dipoll client tiap 30 dtk × tiap tab. Tiap request cold (memo TTL 5 dtk <
+  poll 30 dtk) dulu menjalankan 9× `readSession` penuh (sesi peminta + 8 sesi
+  lain) + ~20+ subproses git per workspace seri + `readdirSync('/proc')`+
+  `readlinkSync` per pid di main thread, TANPA dedup in-flight (memo baru
+  di-set setelah `collectRepo` selesai). Request menumpuk → event loop jenuh
+  → memori merayap 2.4G→3.3G → SEMUA endpoint (termasuk `/` dan
+  `llm.providers`) timeout. Gejala khas: cloudflared `Incoming request ended
+  abruptly: context canceled` pada `/plugins/dsh-git-state/api/state`;
+  `systemctl status dsh` CPU >100% terus naik + memori ikut naik. Fix wajib
+  untuk route yang dipoll: (1) dedup in-flight — bagikan **promise** bukan
+  nilai (map terpisah, hapus saat settle); (2) memo TTL saja tidak cukup
+  kalau TTL < interval poll (tiap poll tetap cold) — dedup in-flight yang
+  mencegah stacking; (3) potong beban per request: `readSession` hanya sesi
+  peminta, bukan scan 8 sesi lain; (4) I/O sinkron (`readdirSync`/
+  `readlinkSync` /proc) memblok main thread → ganti `node:fs/promises` async;
+  (5) `/api/state` bukan method PRIVILEGED, tidak ikut pagar `/api`, jadi
+  beban di sini langsung tembus ke host — wajib hemat. (6) Tag "dikerjakan
+  sesi lain" cukup dari cwd sesi lain yang dikirim client (SnapshotStore
+  live, param `others`) — 0 readSession; jangan scan transkrip host utk
+  sinyal ini. Verifikasi: 8 request
+  concurrent harus berbagi satu jalan (~40ms), bukan 8× menggantung; bandingkan
+  CPU/mem sebelum-sesudah di `systemctl status dsh`.
 - **Komentar blok JANGAN memuat `*/`** (kejadian 18 Aug 2026): docstring
   `scan /proc/*/cwd ...` memutus komentar di tengah (`*/` dari path /proc)
   → sisa teks jadi kode → rolldown PARSE_ERROR yang menyesatkan (error
