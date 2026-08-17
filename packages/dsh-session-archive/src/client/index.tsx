@@ -199,7 +199,7 @@ export function apply(ctx: Context): void {
     {
       name: 'settings.section',
       id: 'archived-sessions',
-      order: 16, // setelah Plugins (15); sebelum apa pun yang datang kemudian
+      order: 25, // paling akhir: general=0, models=10, plugins=15, agent-presets=20 (dsh-client-ui-agent-preset)
       label: () => 'Archived Sessions',
       inject: () => ({ workspaces, sessions }),
     },

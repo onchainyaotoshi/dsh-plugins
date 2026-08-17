@@ -27,8 +27,9 @@
 3. **Transport**: route HTTP sendiri `POST /plugins/dsh-session-archive/api/unarchive`
    (pola monorepo), bukan typert remote. Unarchive idempoten (retry-safe).
 4. **Letak UI**: slot resmi `settings.section`, id `archived-sessions`,
-   order 16 (setelah Plugins). Interaksi: dialog konfirmasi (permintaan
-   pemilik, walau aksinya reversibel), busy-state, error inline.
+   order 25 = PALING AKHIR (setelah Agent presets=20 — koreksi dari 16,
+   permintaan pemilik). Interaksi: dialog konfirmasi (permintaan pemilik,
+   walau aksinya reversibel), busy-state, error inline.
 5. **Pengecualian konvensi cordis.patch.yml**: `- {id: workspace, disabled: true}`
    + row insert kita — diperlukan untuk mengganti service inti `workspaceRegistry`
    dengan subclass. Posisi bundle di AKHIR `dsh.profile.bundles` justru benar

@@ -12,8 +12,9 @@ di paket ini.** Dokumentasi user-facing ada di `README.md`.
 - Yang dibangun: (1) host half = subclass `WorkspaceRegistry` yang menambah
   `unarchiveSession` (seam resmi TIDAK punya unarchive) + route
   `POST /plugins/dsh-session-archive/api/unarchive`; (2) browser half = section
-  `settings.section` id `archived-sessions` order 16 (setelah Plugins) berisi
-  daftar per workspace + tombol Unarchive + dialog konfirmasi.
+  `settings.section` id `archived-sessions` order 25 (PALING AKHIR — setelah
+  Agent presets) berisi daftar per workspace + tombol Unarchive + dialog
+  konfirmasi.
 - **Cakupan v1 sengaja**: unarchive + kelola, TANPA delete permanen (prinsip
   append-only dsh). Derivatif ringan dari MichengAI/dsh-archive-manager
   (Apache-2.0) — tanpa fork WorkspaceBrowser, tanpa bedah delete.
@@ -78,6 +79,17 @@ cordis.patch.yml      # PENGECUALIAN konvensi: - {id: workspace, disabled: true}
   store otomatis. Fallback `workspaces.refresh()` hanya bila respons
   `archivedSessionIds` masih memuat id (no-op idempoten). Terbukti E2E 17 Aug:
   unarchive dari Settings → baris hilang → sesi muncul kembali di tree.
+- **Order section settings punya penghuni yang tak terduga**: order terpasang
+  = general 0 · models 10 · plugins 15 · **agent-presets 20**
+  (dsh-client-ui-agent-preset — section ini TIDAK muncul di daftar seam yang
+  digrep awal karena label-nya dari locale, id-nya `agent-presets`). Cek
+  `grep -B2 -A6 'name: "settings.section"'` di seluruh node_modules sebelum
+  memilih order. Kami pakai 25 = paling akhir (permintaan pemilik).
+- **Header Settings itu chrome global shell** (`settings.header`/
+  `settings.action`/`settings.close` — dirender shell untuk SEMUA section,
+  bukan milik section aktif): tombol "Open configuration file" muncul di
+  setiap section termasuk punya kita — BUKAN bug plugin. Jangan coba
+  sembunyikan dari sisi plugin.
 
 ## Verifikasi
 
