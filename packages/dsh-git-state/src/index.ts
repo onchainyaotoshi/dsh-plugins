@@ -425,10 +425,14 @@ export function apply(ctx: Context): void {
         // Sesi peminta: index live + backfill 1× (history pra-boot).
         const ownWorkdirs = await sessionWorkdirs(ctx, sessionId)
         // Sesi lain: cukup dari index — tanpa readSession sama sekali.
+        // Sesi terarsip dikecualikan: dsh-session TIDAK memfilter sessions.list
+        // untuk archive set (terverifikasi rc.6). No-op aman bila dsh kelak
+        // memfilternya sendiri. Index TIDAK di-prune — gate ada di sini.
+        const archivedIds = new Set(ctx.workspaceRegistry.archivedSessionIds as readonly string[])
         const otherBySession = new Map<string, string[]>()
         for (const s of ctx.sessions.list()) {
           const sid = String(s.id)
-          if (sid === sessionId) continue
+          if (sid === sessionId || archivedIds.has(sid)) continue
           const wds = workdirIndex.get(sid)
           if (wds && wds.length > 0) otherBySession.set(sid, wds)
         }

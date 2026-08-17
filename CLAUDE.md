@@ -42,12 +42,22 @@ packages/
     src/index.ts          # host half (Node): route HTTP GET /plugins/dsh-git-state/api/state (git read-only)
     src/client/index.tsx  # browser half: slot conversation.input.dock (order -10, klik = panel detail)
     cordis.patch.yml      # layer: - insert: [{ id: git-state, name: dsh-git-state }]
+  dsh-session-archive/    # halaman kelola sesi terarsip (Settings → Archived Sessions) + unarchive
+    src/index.ts          # host half: subclass WorkspaceRegistry (unarchiveSession) + route POST /api/unarchive
+    src/client/index.tsx  # browser half: slot settings.section (order 16) — daftar per workspace + dialog konfirmasi
+    cordis.patch.yml      # PENGECUALIAN: - {id: workspace, disabled: true} + - insert: [{id: session-archive, name: dsh-session-archive}]
 ```
 
-Detail per plugin: `packages/file-explorer/CLAUDE.md` dan
-`packages/dsh-tunnel-loopback/CLAUDE.md`.
+Detail per plugin: `packages/*/CLAUDE.md` masing-masing.
 
 ## Konvensi lintas paket
+
+- **Pengecualian `cordis.patch.yml` (khusus plugin yang MENGGANTI service
+  inti, seperti `dsh-session-archive`)**: boleh menonaktifkan row default
+  (`- {id: <id-default>, disabled: true}`) + row insert sendiri; bundle
+  ditaruh di AKHIR `dsh.profile.bundles` supaya layer-nya menang. Lihat
+  `docs/decisions/2026-08-17-session-archive-unarchive-only.md`. Plugin biasa
+  tetap satu row insert tanpa disable.
 
 - Nama paket: dsh-<kata> (unscoped). Nama = id plugin = id modul browser.
 - Build: pnpm install (sekali) → pnpm build (tsdown; preset bersama

@@ -1,0 +1,15 @@
+# Layer bundle dsh-session-archive — diterapkan setelah semua bundle sebelumnya
+# (dsh plugin add menaruh bundle ini di akhir dsh.profile.bundles).
+#
+# PENGECUALIAN konvensi satu-row (ADR 2026-08-17-session-archive-unarchive-only):
+# row default `workspace` (@deepseek-ai/dsh-workspace) dinonaktifkan supaya
+# service `workspaceRegistry` disediakan oleh subclass kita di row insert.
+# Tanpa disable → dua penyedia nama service sama → boot gagal keras.
+- id: workspace
+  disabled: true
+# Satu row ini sekaligus: host half (subclass WorkspaceRegistry + route API)
+# DAN browser roster (dsh.client → bundle di-serve di
+# /plugins/dsh-session-archive/client.js).
+- insert:
+    - id: session-archive
+      name: dsh-session-archive

@@ -8,6 +8,7 @@ Satu repo, banyak paket npm (opsi B — lihat [ADR topologi](docs/decisions/2026
 | Paket | Deskripsi |
 |---|---|
 | `dsh-file-explorer` | Panel tree file + viewer source code workspace aktif di Web UI |
+| `dsh-session-archive` | Halaman kelola sesi terarsip (Settings → Archived Sessions) + unarchive dengan dialog konfirmasi — derivatif Apache-2.0 dari MichengAI/dsh-archive-manager (tanpa fork UI, tanpa delete permanen) |
 | `dsh-tunnel-loopback` | Deployment tunnel/proxy: paksa `connection.isLoopback` di client supaya persistensi settings (tema/bahasa/welcome notice) hidup saat URL browser bukan loopback — WAJIB terdaftar sebelum `@deepseek-ai/dsh-web-app` di `dsh.profile.bundles` |
 
 ## Cara develop
