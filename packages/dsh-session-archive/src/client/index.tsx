@@ -17,6 +17,7 @@ export const name = 'session-archive'
 export const inject = ['workspaces', 'sessions', 'slots']
 
 const API = '/plugins/dsh-session-archive/api/unarchive'
+const MAX_PER_GROUP = 10 // cap tampilan per workspace; sisanya "+N lainnya"
 
 /* ---------- face layanan (loose — kebenaran runtime ada di dsh) ---------- */
 interface WorkspaceViewLike { workspaceId: string; title: string; sessionIds: readonly string[] }
@@ -57,6 +58,7 @@ const CSS = `
 .dshsa-dialog-title{color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:24px}
 .dshsa-dialog-body{color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}
 .dshsa-dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.dshsa-more{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px;padding:2px 12px}
 `
 
 function ArchivedSessionsSection(props: { workspaces: WsFace; sessions: SessionsFace }): ReactElement {
@@ -70,18 +72,23 @@ function ArchivedSessionsSection(props: { workspaces: WsFace; sessions: Sessions
   const titles = ss.byId ?? {}
   const archivedSet = new Set(ws.archivedSessionIds)
 
-  // Grup per workspace (urutan items), sesi dalam urutan slot sessionIds-nya;
-  // sisanya → "Unassigned" di bawah (sesi tanpa accounting workspace itu sah).
+  // Urutan arsip: indeks lebih tinggi = lebih baru diarsip (archivedSessionIds
+  // dalam archive order). Sort TERBARU DULUAN per grup; cap top-N per grup.
+  const archiveRank = new Map([...ws.archivedSessionIds].map((id, i) => [id, i]))
+  const byNewest = (a: string, b: string) => (archiveRank.get(b) ?? -1) - (archiveRank.get(a) ?? -1)
+
+  // Grup per workspace (urutan items); sisanya → "Unassigned" di bawah
+  // (sesi tanpa accounting workspace itu sah).
   const groups: { title: string; ids: string[] }[] = []
   const assigned = new Set<string>()
   for (const w of ws.items) {
-    const ids = (w.sessionIds ?? []).filter((id) => archivedSet.has(id))
+    const ids = (w.sessionIds ?? []).filter((id) => archivedSet.has(id)).sort(byNewest)
     if (ids.length === 0) continue
-    groups.push({ title: w.title || w.workspaceId, ids: [...ids] })
+    groups.push({ title: w.title || w.workspaceId, ids })
     for (const id of ids) assigned.add(id)
   }
-  const unassigned = ws.archivedSessionIds.filter((id) => !assigned.has(id))
-  if (unassigned.length > 0) groups.push({ title: 'Unassigned', ids: [...unassigned] })
+  const unassigned = ws.archivedSessionIds.filter((id) => !assigned.has(id)).sort(byNewest)
+  if (unassigned.length > 0) groups.push({ title: 'Unassigned', ids: unassigned })
 
   async function doUnarchive(sessionId: string): Promise<void> {
     setConfirmId(null)
@@ -131,7 +138,7 @@ function ArchivedSessionsSection(props: { workspaces: WsFace; sessions: Sessions
             {g.title}
             <span className="dshsa-count">{g.ids.length}</span>
           </div>
-          {g.ids.map((id) => (
+          {g.ids.slice(0, MAX_PER_GROUP).map((id) => (
             <div key={id} className="dshsa-row">
               <div className="dshsa-meta">
                 <div className="dshsa-title">{titles[id]?.title || id}</div>
@@ -147,6 +154,9 @@ function ArchivedSessionsSection(props: { workspaces: WsFace; sessions: Sessions
               </button>
             </div>
           ))}
+          {g.ids.length > MAX_PER_GROUP && (
+            <div className="dshsa-more">+ {g.ids.length - MAX_PER_GROUP} lainnya</div>
+          )}
         </div>
       ))}
       {confirmId !== null && (
