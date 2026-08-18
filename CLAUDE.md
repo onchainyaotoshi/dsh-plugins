@@ -46,6 +46,11 @@ packages/
     src/index.ts          # host half: subclass WorkspaceRegistry (unarchiveSession) + route POST /api/unarchive
     src/client/index.tsx  # browser half: slot settings.section (order 16) — daftar per workspace + dialog konfirmasi
     cordis.patch.yml      # PENGECUALIAN: - {id: workspace, disabled: true} + - insert: [{id: session-archive, name: dsh-session-archive}]
+  dsh-copy-link-sesi/     # menu "Salin link" di baris sesi + deep-link ?session= (buka sesi dari URL)
+    src/index.ts          # host half: verifikasi patch menu di dsh-client-ui-workspace (warn kalau hilang)
+    src/client/index.tsx  # browser half: buka sesi dari ?session= lalu bersihkan param URL (one-shot)
+    scripts/apply-patch.mjs # pasang/cek patch item menu — menu baris sesi TIDAK punya seam di rc.6
+    cordis.patch.yml      # layer: - insert: [{id: copy-link-sesi, name: dsh-copy-link-sesi}]
 ```
 
 Detail per plugin: `packages/*/CLAUDE.md` masing-masing.

@@ -1,0 +1,7 @@
+# Layer bundle dsh-copy-link-sesi — diterapkan setelah semua bundle sebelumnya
+# (dsh plugin add menaruh bundle ini di akhir dsh.profile.bundles).
+# Satu row: host half (verifikasi patch menu "Salin link") DAN browser roster
+# (dsh.client → bundle di-serve di /plugins/dsh-copy-link-sesi/client.js).
+- insert:
+    - id: copy-link-sesi
+      name: dsh-copy-link-sesi
