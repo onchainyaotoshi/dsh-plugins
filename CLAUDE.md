@@ -52,6 +52,11 @@ packages/
     scripts/patch-core.mjs  # sumber tunggal logika patch — menu baris sesi TIDAK punya seam (rc.6/rc.7)
     scripts/apply-patch.mjs # CLI manual di atas core (fallback — host half sudah otomatis)
     cordis.patch.yml      # layer: - insert: [{id: copy-link-sesi, name: dsh-copy-link-sesi}]
+  dsh-custom-settings/    # tab Settings "Custom Settings" (order 26): tunable live + cek/upgrade versi dsh
+    src/tunables.ts       # SUMBER TUNGGAL daftar tunable (tambah setting = 1 entri, UI render otomatis)
+    src/index.ts          # host half: settings.register + apply live ke codeRuntime.config + 4 route API (termasuk POST /api/upgrade)
+    src/client/index.tsx  # browser half: slot settings.section (order 26) — form tunable + tooltip + dialog upgrade
+    cordis.patch.yml      # layer: - insert: [{id: custom-settings, name: dsh-custom-settings}]
 ```
 
 Detail per plugin: `packages/*/CLAUDE.md` masing-masing.

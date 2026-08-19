@@ -1,0 +1,6 @@
+# Layer bundle dsh-custom-settings — row di akhir bundles (setelah
+# @deepseek-ai/dsh-web-app → setelah row settings & code-runtime).
+# Satu row melayani host half (plugin Node) DAN browser roster sekaligus.
+- insert:
+    - id: custom-settings
+      name: dsh-custom-settings
