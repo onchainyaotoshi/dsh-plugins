@@ -16,13 +16,20 @@ ngoding di paket ini.** Dokumentasi user-facing ada di `README.md`.
 ## Arsitektur & seam
 
 ```
-src/index.ts          # host half: verifikasi patch (warn kalau marker hilang)
+src/index.ts          # host half: AUTO-REPAIR patch saat boot (core bersama)
 src/client/index.tsx  # browser half: deep-link opener (service `sessions`)
-scripts/apply-patch.mjs # pasang/cek patch menu di bundle dsh-client-ui-workspace
+scripts/patch-core.mjs  # SUMBER TUNGGAL logika patch (anchor + patchSource murni)
+scripts/apply-patch.mjs # CLI manual di atas core (fallback/cek — host half otomatis)
 cordis.patch.yml      # - insert: [{id: copy-link-sesi, name: dsh-copy-link-sesi}]
 ```
 
-- **TIDAK ada seam untuk menu baris sesi di 0.1.0-rc.6** (lesson learned
+- **Host half = auto-repair, bukan cuma verify** (19 Aug 2026): di boot, baca
+  bundle → `patchSource()` → kalau `applied`, tulis ulang file (info log);
+  kalau `anchor-missing`, warn loud; boot tidak pernah gagal. Patch terjadi
+  saat boot sebelum server melayani request → rev manifest otomatis memakai
+  isi ter-patch, tidak perlu restart ekstra.
+
+- **TIDAK ada seam untuk menu baris sesi di 0.1.0-rc.6/rc.7** (lesson learned
   bawah): `sessionMenuItems` di-hardcode di `SessionNodeItem`
   (`dsh-client-ui-workspace`), slot `sidebar.workspaces` hanya punya satu child
   `directoryFlow`. Satu-satunya cara item menu masuk ke HoverCard itu = patch
@@ -37,19 +44,26 @@ cordis.patch.yml      # - insert: [{id: copy-link-sesi, name: dsh-copy-link-sesi
 - Bundle di-serve persis dari file disk (hash file = hash yang di-serve),
   rev = sha1 pendek isi file dihitung saat boot → setelah patch, **restart dsh
   sekali** supaya boot manifest memakai rev baru.
-- Host half verifikasi: `createRequire(ctx.baseUrl)` + `require.resolve`
+- Host half auto-repair: `createRequire(ctx.baseUrl)` + `require.resolve`
   paket target (pola sama dengan `dsh-client-modules`) → baca `lib/client.js`
-  → cek marker. Gagal = log warn, tidak pernah error boot.
+  → `patchSource()` (dari `scripts/patch-core.mjs`, ter-inline di bundle host).
+  `applied` = tulis ulang; `anchor-missing` = warn; error apa pun = warn,
+  tidak pernah error boot.
 - Client half: inject `sessions` (dsh-client-runtime); `list.subscribe` +
   `getSnapshot().ids` menunggu sesi target terdaftar, lalu `sessions.open(id)`
   (idempoten per kontrak runtime). `history.replaceState` membersihkan param.
 
 ## Lesson learned
 
-- **Menu baris sesi tidak punya seam (rc.6)** — jangan buang waktu mencari
-  slot; satu-satunya jalan item menu = patch bundle. Upgrade dsh = bundle
-  diganti → patch hilang → jalan `scripts/apply-patch.mjs` (anchor dicek,
-  gagal loud kalau versi berubah) lalu restart.
+- **Menu baris sesi tidak punya seam (rc.6 & rc.7)** — jangan buang waktu
+  mencari slot; satu-satunya jalan item menu = patch bundle. Upgrade dsh =
+  bundle diganti → patch hilang. SEJAK 19 Aug 2026: host half auto-repair di
+  boot (core bersama `scripts/patch-core.mjs`) — upgrade cukup diikuti restart
+  dsh biasa, menu sembuh sendiri. `apply-patch.mjs` hanya fallback/cek manual;
+  anchor berubah (dsh ubah struktur bundle) = warn loud di log, bukan diam.
+- **JAGA SELARAS: logika patch cuma di `scripts/patch-core.mjs`** — jangan
+  duplikasi anchor ke file lain; host half meng-import-nya (ter-inline saat
+  build), CLI meng-import-nya langsung.
 - Label menu hardcoded `"Salin link"` (bukan via i18n `t()`) — sengaja,
   patch tidak boleh menyentuh mekanisme locale bundle.
 - Jangan pernah menaruh path absolut di file paket ini (repo publik) —
@@ -67,6 +81,11 @@ curl -sS http://127.0.0.1:3080/plugins/@deepseek-ai/dsh-client-ui-workspace/clie
 curl -sS http://127.0.0.1:3080/plugins/dsh-copy-link-sesi/client.js   # 200
 curl -sS http://127.0.0.1:3080/ | grep -o 'dsh-copy-link-sesi[^}]*}'  # row boot manifest
 ```
+
+Uji AUTO-REPAIR (simulasi upgrade dsh): revert patch dari bundle (balikkan
+`NEW_ITEMS→OLD_ITEMS`, `NEW_SELECT→OLD_SELECT` memakai konstanta di
+`patch-core.mjs`), restart dsh, lalu cek marker kembali = 1 dan ada baris log
+info `terpasang ulang otomatis` di journal dsh.
 
 Uji browser: (1) hover baris sesi → menu ⋯ → "Salin link" → paste → buka;
 (2) buka `https://<domain>/?session=<id>` langsung → sesi terbuka, param

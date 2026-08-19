@@ -47,9 +47,10 @@ packages/
     src/client/index.tsx  # browser half: slot settings.section (order 16) — daftar per workspace + dialog konfirmasi
     cordis.patch.yml      # PENGECUALIAN: - {id: workspace, disabled: true} + - insert: [{id: session-archive, name: dsh-session-archive}]
   dsh-copy-link-sesi/     # menu "Salin link" di baris sesi + deep-link ?session= (buka sesi dari URL)
-    src/index.ts          # host half: verifikasi patch menu di dsh-client-ui-workspace (warn kalau hilang)
+    src/index.ts          # host half: AUTO-REPAIR patch menu saat boot (logika di scripts/patch-core.mjs)
     src/client/index.tsx  # browser half: buka sesi dari ?session= lalu bersihkan param URL (one-shot)
-    scripts/apply-patch.mjs # pasang/cek patch item menu — menu baris sesi TIDAK punya seam di rc.6
+    scripts/patch-core.mjs  # sumber tunggal logika patch — menu baris sesi TIDAK punya seam (rc.6/rc.7)
+    scripts/apply-patch.mjs # CLI manual di atas core (fallback — host half sudah otomatis)
     cordis.patch.yml      # layer: - insert: [{id: copy-link-sesi, name: dsh-copy-link-sesi}]
 ```
 
